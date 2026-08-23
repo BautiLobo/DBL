@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import Logo from './Logo'
 
 const NAV = [
   { to: '/', label: 'Panel', end: true },
@@ -17,7 +18,7 @@ export default function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark" />
+          <Logo size={30} />
           <div>
             <div className="brand-name">DBL Repuestos</div>
             <div className="brand-sub">Gestión de inventario</div>

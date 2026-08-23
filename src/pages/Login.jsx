@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../lib/auth'
+import Logo from '../components/Logo'
 
 export default function Login() {
   const { signIn } = useAuth()
@@ -21,7 +22,7 @@ export default function Login() {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="brand" style={{ padding: 0, marginBottom: 4 }}>
-          <div className="brand-mark" />
+          <Logo size={30} />
           <div>
             <div className="brand-name">DBL Repuestos</div>
             <div className="brand-sub">Gestión de inventario</div>
