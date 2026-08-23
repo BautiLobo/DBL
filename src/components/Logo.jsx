@@ -19,7 +19,7 @@ export default function Logo({ size = 30 }) {
         <rect x="42" y="2" width="16" height="17" rx="3" transform="rotate(270 50 50)" />
         <rect x="42" y="2" width="16" height="17" rx="3" transform="rotate(315 50 50)" />
       </g>
-      <circle cx="50" cy="50" r="11" fill="url(#logoGrad)" />
+      <circle cx="50" cy="50" r="11" fill="#241a0f" />
     </svg>
   )
 }
