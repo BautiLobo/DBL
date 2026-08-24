@@ -55,6 +55,12 @@ export default function Pedidos() {
   const [sendingMessage, setSendingMessage] = useState(false)
   const [messagesError, setMessagesError] = useState('')
 
+  const [detailSale, setDetailSale] = useState(null)
+  const [detailMovements, setDetailMovements] = useState(null)
+  const [notesDraft, setNotesDraft] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [statusSaving, setStatusSaving] = useState(false)
+
   async function loadData() {
     setLoading(true)
     const { data: salesData } = await supabase
@@ -146,6 +152,15 @@ export default function Pedidos() {
     loadData()
   }
 
+  async function refreshDetailSale(saleId) {
+    const { data } = await supabase
+      .from('sales')
+      .select('*, sale_items(*, products(title))')
+      .eq('id', saleId)
+      .single()
+    if (data) setDetailSale(data)
+  }
+
   async function refreshShipping(sale) {
     try {
       const res = await fetch('/api/ml/shipment', {
@@ -153,10 +168,43 @@ export default function Pedidos() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sale_id: sale.id }),
       })
-      if (res.ok) loadData()
+      if (res.ok) {
+        loadData()
+        if (detailSale?.id === sale.id) refreshDetailSale(sale.id)
+      }
     } catch {
       // silencioso: el usuario puede reintentar tocando el botón de nuevo
     }
+  }
+
+  async function openDetail(sale) {
+    setDetailSale(sale)
+    setNotesDraft(sale.notes || '')
+    setDetailMovements(null)
+    const { data } = await supabase
+      .from('stock_movements')
+      .select('*, products(title)')
+      .eq('related_sale_id', sale.id)
+      .order('created_at', { ascending: false })
+    setDetailMovements(data || [])
+  }
+
+  async function saveNotes() {
+    if (!detailSale) return
+    setSavingNotes(true)
+    await supabase.from('sales').update({ notes: notesDraft }).eq('id', detailSale.id)
+    setSavingNotes(false)
+    setDetailSale((s) => ({ ...s, notes: notesDraft }))
+    loadData()
+  }
+
+  async function changeStatus(newStatus) {
+    if (!detailSale) return
+    setStatusSaving(true)
+    await supabase.from('sales').update({ status: newStatus }).eq('id', detailSale.id)
+    setStatusSaving(false)
+    setDetailSale((s) => ({ ...s, status: newStatus }))
+    loadData()
   }
 
   async function openMessages(sale) {
@@ -251,30 +299,38 @@ export default function Pedidos() {
                   <td><span className={'badge ' + (STATUS_BADGE[s.status] || 'badge-neutral')}>{STATUS_LABEL[s.status] || s.status}</span></td>
                   <td>
                     {s.ml_shipment_id ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span className={'badge ' + (SHIP_STATUS_BADGE[s.shipping_status] || 'badge-neutral')}>
-                          {SHIP_STATUS_LABEL[s.shipping_status] || s.shipping_status || 'Sin datos'}
-                        </span>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          style={{ padding: '2px 6px', fontSize: 12 }}
-                          title="Actualizar estado de envío"
-                          onClick={() => refreshShipping(s)}
-                        >
-                          ↻
-                        </button>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span className={'badge ' + (SHIP_STATUS_BADGE[s.shipping_status] || 'badge-neutral')}>
+                            {SHIP_STATUS_LABEL[s.shipping_status] || s.shipping_status || 'Sin datos'}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ padding: '2px 6px', fontSize: 12 }}
+                            title="Actualizar estado de envío"
+                            onClick={() => refreshShipping(s)}
+                          >
+                            ↻
+                          </button>
+                        </div>
+                        {s.tracking_number && (
+                          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>#{s.tracking_number}</div>
+                        )}
                       </div>
                     ) : (
                       '—'
                     )}
                   </td>
                   <td>
-                    {s.source === 'mercadolibre' && s.ml_order_id && (
-                      <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => openMessages(s)}>
-                        💬 Mensajes
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn" style={{ fontSize: 12 }} onClick={() => openDetail(s)}>Detalle</button>
+                      {s.source === 'mercadolibre' && s.ml_order_id && (
+                        <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => openMessages(s)}>
+                          💬
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -363,6 +419,128 @@ export default function Pedidos() {
               {sendingMessage ? 'Enviando…' : 'Enviar'}
             </button>
           </div>
+        </Modal>
+      )}
+
+      {detailSale && (
+        <Modal
+          title={`Pedido ${detailSale.ml_order_id ? '#' + detailSale.ml_order_id : '#' + detailSale.id}`}
+          onClose={() => setDetailSale(null)}
+          actions={
+            <>
+              {detailSale.source === 'mercadolibre' && detailSale.ml_order_id && (
+                <button className="btn" onClick={() => openMessages(detailSale)}>💬 Mensajes</button>
+              )}
+              <button className="btn btn-primary" onClick={() => setDetailSale(null)}>Cerrar</button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Origen</div>
+              <span className={'badge ' + (detailSale.source === 'mercadolibre' ? 'badge-orange' : 'badge-neutral')}>
+                {detailSale.source === 'mercadolibre' ? 'Mercado Libre' : 'Manual'}
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Fecha</div>
+              <div>{formatDate(detailSale.sale_date || detailSale.created_at)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Comprador</div>
+              <div>{detailSale.buyer_name || '—'}</div>
+            </div>
+          </div>
+
+          <div className="field" style={{ marginBottom: 16 }}>
+            <label>Estado</label>
+            <select
+              className="input"
+              value={detailSale.status}
+              disabled={statusSaving}
+              onChange={(e) => changeStatus(e.target.value)}
+            >
+              {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          {detailSale.ml_shipment_id && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Envío</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <span className={'badge ' + (SHIP_STATUS_BADGE[detailSale.shipping_status] || 'badge-neutral')}>
+                  {SHIP_STATUS_LABEL[detailSale.shipping_status] || detailSale.shipping_status || 'Sin datos'}
+                </span>
+                {detailSale.tracking_number && <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>#{detailSale.tracking_number}</span>}
+                <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => refreshShipping(detailSale)}>
+                  ↻ Actualizar
+                </button>
+              </div>
+            </div>
+          )}
+
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Productos</label>
+          <table className="table" style={{ marginTop: 6, marginBottom: 16 }}>
+            <thead>
+              <tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr>
+            </thead>
+            <tbody>
+              {(detailSale.sale_items || []).map((it) => (
+                <tr key={it.id}>
+                  <td>{it.products?.title || '—'}</td>
+                  <td>{it.qty}</td>
+                  <td>{formatMoney(it.unit_price)}</td>
+                  <td>{formatMoney(it.qty * it.unit_price)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 16, fontSize: 13.5 }}>
+            <div><span style={{ color: 'var(--text-dim)' }}>Total: </span><strong>{formatMoney(detailSale.total_amount)}</strong></div>
+            {detailSale.ml_fee > 0 && <div><span style={{ color: 'var(--text-dim)' }}>Comisión ML: </span>{formatMoney(detailSale.ml_fee)}</div>}
+            {detailSale.shipping_cost > 0 && <div><span style={{ color: 'var(--text-dim)' }}>Envío: </span>{formatMoney(detailSale.shipping_cost)}</div>}
+            <div><span style={{ color: 'var(--text-dim)' }}>Neto: </span><strong>{formatMoney(detailSale.net_amount)}</strong></div>
+          </div>
+
+          <div className="field" style={{ marginBottom: 16 }}>
+            <label>Notas</label>
+            <textarea
+              className="input"
+              rows={2}
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn"
+              style={{ marginTop: 6, alignSelf: 'flex-start' }}
+              disabled={savingNotes || notesDraft === (detailSale.notes || '')}
+              onClick={saveNotes}
+            >
+              {savingNotes ? 'Guardando…' : 'Guardar notas'}
+            </button>
+          </div>
+
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Movimientos de stock</label>
+          {detailMovements === null ? (
+            <div className="empty-state" style={{ padding: 12 }}>Cargando…</div>
+          ) : detailMovements.length === 0 ? (
+            <div className="empty-state" style={{ padding: 12 }}>Sin movimientos registrados.</div>
+          ) : (
+            <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {detailMovements.map((m) => (
+                <div key={m.id} style={{ fontSize: 13, display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>
+                  <span>{m.products?.title || '—'}</span>
+                  <span style={{ color: m.type === 'out' ? 'var(--danger)' : 'var(--green)' }}>
+                    {m.type === 'out' ? '−' : '+'}{m.qty}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </Modal>
       )}
     </div>
