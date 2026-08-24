@@ -17,6 +17,9 @@ const EMPTY_FORM = {
   ml_item_id: '',
 }
 
+const ML_STATUS_LABEL = { active: 'Activa', paused: 'Pausada', closed: 'Finalizada' }
+const ML_STATUS_BADGE = { active: 'badge-green', paused: 'badge-warning', closed: 'badge-neutral' }
+
 export default function Inventario() {
   const [products, setProducts] = useState([])
   const [photosByProduct, setPhotosByProduct] = useState({})
@@ -26,6 +29,16 @@ export default function Inventario() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+
+  const [mlBusy, setMlBusy] = useState(false)
+  const [mlError, setMlError] = useState('')
+  const [categoryQuery, setCategoryQuery] = useState('')
+  const [categorySuggestions, setCategorySuggestions] = useState([])
+  const [selectedCategory, setSelectedCategory] = useState(null)
+  const [condition, setCondition] = useState('new')
+  const [reviews, setReviews] = useState(null)
+
+  const editingProduct = form.id ? products.find((p) => p.id === form.id) : null
 
   async function loadProducts() {
     setLoading(true)
@@ -52,8 +65,17 @@ export default function Inventario() {
 
   useEffect(() => { loadProducts() }, [])
 
+  function resetMlUi(title) {
+    setMlError('')
+    setCategoryQuery(title || '')
+    setCategorySuggestions([])
+    setSelectedCategory(null)
+    setCondition('new')
+  }
+
   function openNew() {
     setForm(EMPTY_FORM)
+    resetMlUi('')
     setModalOpen(true)
   }
 
@@ -71,7 +93,87 @@ export default function Inventario() {
       min_stock_alert: p.min_stock_alert ?? '2',
       ml_item_id: p.ml_item_id || '',
     })
+    resetMlUi(p.title)
     setModalOpen(true)
+  }
+
+  async function loadReviews(itemId) {
+    setReviews(null)
+    try {
+      const res = await fetch('/api/ml/reviews?item_id=' + encodeURIComponent(itemId))
+      const data = await res.json()
+      if (res.ok) setReviews(data)
+    } catch {
+      // silencioso: la sección de reseñas queda vacía
+    }
+  }
+
+  useEffect(() => {
+    if (modalOpen && editingProduct?.ml_item_id) {
+      loadReviews(editingProduct.ml_item_id)
+    } else {
+      setReviews(null)
+    }
+  }, [modalOpen, editingProduct?.ml_item_id])
+
+  async function searchCategory() {
+    if (!categoryQuery.trim()) return
+    setMlBusy(true)
+    setMlError('')
+    try {
+      const res = await fetch('/api/ml/category-predict?q=' + encodeURIComponent(categoryQuery))
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error consultando categorías')
+      setCategorySuggestions(data.suggestions || [])
+    } catch (e) {
+      setMlError(e.message)
+    }
+    setMlBusy(false)
+  }
+
+  async function publishToMl() {
+    if (!selectedCategory || !form.id) return
+    setMlBusy(true)
+    setMlError('')
+    try {
+      const res = await fetch('/api/ml/items-create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: form.id,
+          category_id: selectedCategory.category_id,
+          condition,
+          listing_type_id: 'gold_special',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error + (data.detail ? ': ' + data.detail : ''))
+      setCategorySuggestions([])
+      setSelectedCategory(null)
+      loadProducts()
+    } catch (e) {
+      setMlError(e.message)
+    }
+    setMlBusy(false)
+  }
+
+  async function changeMlStatus(status) {
+    if (status === 'closed' && !confirm('¿Finalizar esta publicación? Mercado Libre no permite reabrirla.')) return
+    setMlBusy(true)
+    setMlError('')
+    try {
+      const res = await fetch('/api/ml/items-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: form.id, status }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error actualizando la publicación')
+      loadProducts()
+    } catch (e) {
+      setMlError(e.message)
+    }
+    setMlBusy(false)
   }
 
   async function handleSave(e) {
@@ -92,6 +194,13 @@ export default function Inventario() {
 
     if (form.id) {
       await supabase.from('products').update(payload).eq('id', form.id)
+      if (editingProduct?.ml_item_id) {
+        fetch('/api/ml/items-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_id: form.id, price: payload.sale_price, stock_qty: payload.stock_qty }),
+        }).catch(() => {})
+      }
     } else {
       await supabase.from('products').insert(payload)
     }
@@ -182,6 +291,7 @@ export default function Inventario() {
                 <th>Costo</th>
                 <th>Precio</th>
                 <th>Stock</th>
+                <th>ML</th>
                 <th></th>
               </tr>
             </thead>
@@ -213,6 +323,15 @@ export default function Inventario() {
                         <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => adjustStock(p, 1)}>+</button>
                         {low && <span className="badge badge-danger">Bajo</span>}
                       </div>
+                    </td>
+                    <td>
+                      {p.ml_item_id ? (
+                        <span className={'badge ' + (ML_STATUS_BADGE[p.ml_status] || 'badge-neutral')}>
+                          {ML_STATUS_LABEL[p.ml_status] || p.ml_status}
+                        </span>
+                      ) : (
+                        <span className="badge badge-neutral">No publicado</span>
+                      )}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -304,6 +423,104 @@ export default function Inventario() {
                   />
                 </label>
               </div>
+            </div>
+          )}
+
+          {form.id && (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Mercado Libre</label>
+                {editingProduct?.ml_permalink && (
+                  <a href={editingProduct.ml_permalink} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ fontSize: 12 }}>
+                    Ver publicación ↗
+                  </a>
+                )}
+              </div>
+
+              {mlError && <div className="auth-error" style={{ marginBottom: 10 }}>{mlError}</div>}
+
+              {editingProduct?.ml_item_id ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span className={'badge ' + (ML_STATUS_BADGE[editingProduct.ml_status] || 'badge-neutral')}>
+                    {ML_STATUS_LABEL[editingProduct.ml_status] || editingProduct.ml_status}
+                  </span>
+                  {editingProduct.ml_status !== 'closed' && (
+                    <>
+                      {editingProduct.ml_status === 'active' ? (
+                        <button type="button" className="btn" disabled={mlBusy} onClick={() => changeMlStatus('paused')}>Pausar</button>
+                      ) : (
+                        <button type="button" className="btn" disabled={mlBusy} onClick={() => changeMlStatus('active')}>Reactivar</button>
+                      )}
+                      <button type="button" className="btn btn-ghost btn-danger" disabled={mlBusy} onClick={() => changeMlStatus('closed')}>
+                        Finalizar
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      className="input"
+                      value={categoryQuery}
+                      onChange={(e) => setCategoryQuery(e.target.value)}
+                      placeholder="Buscar categoría…"
+                    />
+                    <button type="button" className="btn" disabled={mlBusy} onClick={searchCategory}>Buscar</button>
+                  </div>
+                  {categorySuggestions.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {categorySuggestions.map((c) => (
+                        <label key={c.category_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                          <input
+                            type="radio"
+                            name="ml-category"
+                            checked={selectedCategory?.category_id === c.category_id}
+                            onChange={() => setSelectedCategory(c)}
+                          />
+                          {c.category_name}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {selectedCategory && (
+                    <>
+                      <select className="input" value={condition} onChange={(e) => setCondition(e.target.value)}>
+                        <option value="new">Nuevo</option>
+                        <option value="used">Usado</option>
+                      </select>
+                      <button type="button" className="btn btn-primary" disabled={mlBusy} onClick={publishToMl}>
+                        {mlBusy ? 'Publicando…' : 'Publicar en Mercado Libre'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {editingProduct?.ml_item_id && (
+                <div style={{ marginTop: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Reseñas</label>
+                  {reviews === null ? (
+                    <div className="empty-state" style={{ padding: 12 }}>Cargando…</div>
+                  ) : reviews.reviews_total === 0 ? (
+                    <div className="empty-state" style={{ padding: 12 }}>Todavía no tiene reseñas.</div>
+                  ) : (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                        ★ {reviews.rating_average.toFixed(1)} ({reviews.reviews_total})
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                        {reviews.reviews.map((r) => (
+                          <div key={r.id} style={{ fontSize: 13, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
+                            <div style={{ fontWeight: 600 }}>{'★'.repeat(r.rate)}{'☆'.repeat(5 - r.rate)}</div>
+                            {r.comment && <div style={{ color: 'var(--text-dim)' }}>{r.comment}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </Modal>

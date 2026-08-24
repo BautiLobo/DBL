@@ -16,6 +16,8 @@ CREATE TABLE products (
   stock_qty       INTEGER NOT NULL DEFAULT 0,
   min_stock_alert INTEGER NOT NULL DEFAULT 2,
   ml_item_id      TEXT UNIQUE,            -- ID de la publicación en Mercado Libre (ej MLA123456789)
+  ml_status       TEXT NOT NULL DEFAULT 'not_listed' CHECK (ml_status IN ('not_listed','active','paused','closed')),
+  ml_permalink    TEXT,                   -- link público a la publicación
   active          BOOLEAN DEFAULT TRUE,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
@@ -53,6 +55,9 @@ CREATE TABLE sales (
   net_amount   NUMERIC(12,2) DEFAULT 0,
   sale_date    DATE DEFAULT CURRENT_DATE,
   notes        TEXT DEFAULT '',
+  ml_shipment_id  TEXT,
+  shipping_status TEXT,
+  tracking_number TEXT,
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -17,6 +17,19 @@ async function handleOrder(resource) {
   const { data: existing } = await db.from('sales').select('id').eq('ml_order_id', String(order.id)).maybeSingle()
   if (existing) return // ya procesado (ML puede reintentar notificaciones)
 
+  let shipping_status = null
+  let tracking_number = null
+  const ml_shipment_id = order.shipping?.id ? String(order.shipping.id) : null
+  if (ml_shipment_id) {
+    try {
+      const shipment = await mlFetch(`/shipments/${ml_shipment_id}`)
+      shipping_status = shipment.status || null
+      tracking_number = shipment.tracking_number || null
+    } catch (e) {
+      console.error('No se pudo traer el envío de la orden', order.id, e)
+    }
+  }
+
   const { data: sale, error } = await db
     .from('sales')
     .insert({
@@ -27,6 +40,9 @@ async function handleOrder(resource) {
       total_amount: order.total_amount || 0,
       net_amount: order.total_amount || 0,
       sale_date: (order.date_created || new Date().toISOString()).slice(0, 10),
+      ml_shipment_id,
+      shipping_status,
+      tracking_number,
     })
     .select()
     .single()

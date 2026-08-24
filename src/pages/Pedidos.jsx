@@ -18,6 +18,25 @@ const STATUS_BADGE = {
   cancelled: 'badge-danger',
 }
 
+const SHIP_STATUS_LABEL = {
+  pending: 'Pendiente',
+  handling: 'Preparando',
+  ready_to_ship: 'Listo para enviar',
+  shipped: 'Enviado',
+  delivered: 'Entregado',
+  not_delivered: 'No entregado',
+  cancelled: 'Cancelado',
+}
+const SHIP_STATUS_BADGE = {
+  pending: 'badge-warning',
+  handling: 'badge-warning',
+  ready_to_ship: 'badge-orange',
+  shipped: 'badge-orange',
+  delivered: 'badge-green',
+  not_delivered: 'badge-danger',
+  cancelled: 'badge-danger',
+}
+
 const EMPTY_ITEM = { product_id: '', qty: 1, unit_price: 0 }
 
 export default function Pedidos() {
@@ -121,6 +140,19 @@ export default function Pedidos() {
     loadData()
   }
 
+  async function refreshShipping(sale) {
+    try {
+      const res = await fetch('/api/ml/shipment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sale_id: sale.id }),
+      })
+      if (res.ok) loadData()
+    } catch {
+      // silencioso: el usuario puede reintentar tocando el botón de nuevo
+    }
+  }
+
   const filtered = sales.filter((s) => filter === 'all' || s.source === filter)
 
   return (
@@ -159,6 +191,7 @@ export default function Pedidos() {
                 <th>Productos</th>
                 <th>Total</th>
                 <th>Estado</th>
+                <th>Envío</th>
               </tr>
             </thead>
             <tbody>
@@ -174,6 +207,26 @@ export default function Pedidos() {
                   <td>{(s.sale_items || []).map((it) => it.products?.title).filter(Boolean).join(', ') || '—'}</td>
                   <td style={{ fontWeight: 600 }}>{formatMoney(s.total_amount)}</td>
                   <td><span className={'badge ' + (STATUS_BADGE[s.status] || 'badge-neutral')}>{STATUS_LABEL[s.status] || s.status}</span></td>
+                  <td>
+                    {s.ml_shipment_id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className={'badge ' + (SHIP_STATUS_BADGE[s.shipping_status] || 'badge-neutral')}>
+                          {SHIP_STATUS_LABEL[s.shipping_status] || s.shipping_status || 'Sin datos'}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ padding: '2px 6px', fontSize: 12 }}
+                          title="Actualizar estado de envío"
+                          onClick={() => refreshShipping(s)}
+                        >
+                          ↻
+                        </button>
+                      </div>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
