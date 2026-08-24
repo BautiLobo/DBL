@@ -3,12 +3,32 @@ import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import Modal from '../components/Modal'
 
+const CATEGORIES = [
+  'Motor',
+  'Transmisión',
+  'Frenos',
+  'Suspensión y Dirección',
+  'Sistema Eléctrico',
+  'Carrocería y Plásticos',
+  'Escape',
+  'Neumáticos y Ruedas',
+  'Filtros y Lubricantes',
+  'Accesorios',
+  'Indumentaria y Cascos',
+  'Herramientas',
+  'Otros',
+]
+
+const PART_TYPE_LABEL = { original: 'Original', alternativo: 'Alternativo', usado: 'Usado' }
+const PART_TYPE_BADGE = { original: 'badge-green', alternativo: 'badge-orange', usado: 'badge-neutral' }
+
 const EMPTY_FORM = {
   id: null,
   sku: '',
   title: '',
   description: '',
-  category: '',
+  category: CATEGORIES[0],
+  part_type: 'alternativo',
   brand_compat: '',
   cost_price: '',
   sale_price: '',
@@ -25,6 +45,8 @@ export default function Inventario() {
   const [photosByProduct, setPhotosByProduct] = useState({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -85,7 +107,8 @@ export default function Inventario() {
       sku: p.sku || '',
       title: p.title || '',
       description: p.description || '',
-      category: p.category || '',
+      category: p.category || CATEGORIES[0],
+      part_type: p.part_type || 'alternativo',
       brand_compat: p.brand_compat || '',
       cost_price: p.cost_price ?? '',
       sale_price: p.sale_price ?? '',
@@ -184,6 +207,7 @@ export default function Inventario() {
       title: form.title,
       description: form.description,
       category: form.category,
+      part_type: form.part_type,
       brand_compat: form.brand_compat,
       cost_price: Number(form.cost_price) || 0,
       sale_price: Number(form.sale_price) || 0,
@@ -251,8 +275,16 @@ export default function Inventario() {
 
   const filtered = products.filter((p) => {
     const q = search.toLowerCase()
-    return !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q)
+    const matchesSearch = !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q)
+    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter
+    const matchesType = typeFilter === 'all' || p.part_type === typeFilter
+    return matchesSearch && matchesCategory && matchesType
   })
+
+  const categoryCounts = CATEGORIES.reduce((acc, c) => {
+    acc[c] = products.filter((p) => p.category === c).length
+    return acc
+  }, {})
 
   const editingPhotos = form.id ? (photosByProduct[form.id] || []) : []
 
@@ -269,10 +301,23 @@ export default function Inventario() {
       <div className="toolbar">
         <input
           className="input"
+          style={{ maxWidth: 260 }}
           placeholder="Buscar por título, SKU o categoría…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <select className="input" style={{ maxWidth: 220 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+          <option value="all">Todas las categorías ({products.length})</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c} ({categoryCounts[c]})</option>
+          ))}
+        </select>
+        <select className="input" style={{ maxWidth: 160 }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <option value="all">Todos los tipos</option>
+          {Object.entries(PART_TYPE_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="table-wrap">
@@ -288,6 +333,7 @@ export default function Inventario() {
                 <th>Producto</th>
                 <th>SKU</th>
                 <th>Categoría</th>
+                <th>Tipo</th>
                 <th>Costo</th>
                 <th>Precio</th>
                 <th>Stock</th>
@@ -313,7 +359,12 @@ export default function Inventario() {
                       {p.brand_compat && <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>{p.brand_compat}</div>}
                     </td>
                     <td>{p.sku || '—'}</td>
-                    <td>{p.category || '—'}</td>
+                    <td>{p.category ? <span className="badge badge-neutral">{p.category}</span> : '—'}</td>
+                    <td>
+                      <span className={'badge ' + (PART_TYPE_BADGE[p.part_type] || 'badge-neutral')}>
+                        {PART_TYPE_LABEL[p.part_type] || p.part_type}
+                      </span>
+                    </td>
                     <td>{formatMoney(p.cost_price)}</td>
                     <td>{formatMoney(p.sale_price)}</td>
                     <td>
@@ -371,7 +422,17 @@ export default function Inventario() {
             </div>
             <div className="field">
               <label>Categoría</label>
-              <input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+              <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Tipo</label>
+              <select className="input" value={form.part_type} onChange={(e) => setForm({ ...form, part_type: e.target.value })}>
+                {Object.entries(PART_TYPE_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </div>
             <div className="field span-2">
               <label>Compatibilidad (marcas/modelos)</label>

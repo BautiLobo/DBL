@@ -10,6 +10,7 @@ CREATE TABLE products (
   title           TEXT NOT NULL,
   description     TEXT DEFAULT '',
   category        TEXT DEFAULT '',
+  part_type       TEXT NOT NULL DEFAULT 'alternativo' CHECK (part_type IN ('original','alternativo','usado')),
   brand_compat    TEXT DEFAULT '',        -- ej: "Honda Wave, Yamaha Crypton"
   cost_price      NUMERIC(12,2) DEFAULT 0,
   sale_price      NUMERIC(12,2) DEFAULT 0,
