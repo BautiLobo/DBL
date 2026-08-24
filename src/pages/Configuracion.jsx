@@ -5,6 +5,7 @@ export default function Configuracion() {
   const [settings, setSettings] = useState({ business_name: '', default_min_stock_alert: '2' })
   const [savingSettings, setSavingSettings] = useState(false)
   const [mlStatus, setMlStatus] = useState(null) // null = cargando
+  const [mlWhoAmI, setMlWhoAmI] = useState(null)
   const [banner, setBanner] = useState(null)
 
   useEffect(() => {
@@ -26,7 +27,13 @@ export default function Configuracion() {
   async function refreshMlStatus() {
     try {
       const res = await fetch('/api/ml/status')
-      setMlStatus(await res.json())
+      const data = await res.json()
+      setMlStatus(data)
+      if (data.connected) {
+        fetch('/api/ml/whoami').then((r) => r.json()).then((who) => setMlWhoAmI(who.error ? null : who))
+      } else {
+        setMlWhoAmI(null)
+      }
     } catch {
       setMlStatus({ connected: false })
     }
@@ -76,9 +83,22 @@ export default function Configuracion() {
         {mlStatus === null ? (
           <div className="empty-state">Verificando conexión…</div>
         ) : mlStatus.connected ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span className="badge badge-green">Conectado</span>
-            <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>Usuario ML #{mlStatus.ml_user_id}</span>
+            {mlWhoAmI ? (
+              <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>
+                <strong style={{ color: 'var(--text-h)' }}>{mlWhoAmI.nickname}</strong>
+                {mlWhoAmI.first_name && ` — ${mlWhoAmI.first_name} ${mlWhoAmI.last_name || ''}`}
+                {mlWhoAmI.seller_reputation?.level_id && ` · Reputación: ${mlWhoAmI.seller_reputation.level_id}`}
+              </span>
+            ) : (
+              <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>Usuario ML #{mlStatus.ml_user_id}</span>
+            )}
+            {mlWhoAmI?.permalink && (
+              <a href={mlWhoAmI.permalink} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ fontSize: 12 }}>
+                Ver perfil ↗
+              </a>
+            )}
             <button className="btn btn-ghost btn-danger" onClick={handleDisconnect}>Desconectar</button>
           </div>
         ) : (
