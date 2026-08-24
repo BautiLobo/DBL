@@ -112,6 +112,14 @@ button, input, select, textarea {
   min-height: 100svh;
 }
 
+.mobile-topbar {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
 .sidebar {
   width: 220px;
   flex-shrink: 0;
@@ -493,7 +501,76 @@ table.table {
 @media (max-width: 900px) {
   .charts-grid { grid-template-columns: 1fr; }
   .app-shell { flex-direction: column; }
-  .sidebar { width: 100%; flex-direction: row; overflow-x: auto; }
-  .sidebar-footer { display: none; }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+  .mobile-topbar .brand { padding: 0; }
+
+  .menu-toggle {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-h);
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .menu-toggle:hover { background: var(--surface-2); }
+
+  .sidebar {
+    position: fixed;
+    top: 57px;
+    left: 0;
+    right: 0;
+    width: auto;
+    flex-direction: column;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    max-height: calc(100svh - 57px);
+    overflow-y: auto;
+    z-index: 40;
+    transform: translateY(-8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+  .sidebar.open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .sidebar .brand { display: none; }
+  .sidebar-footer { display: block; }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    top: 57px;
+    background: rgba(20, 15, 10, 0.45);
+    z-index: 35;
+  }
+
   .main { padding: 18px; }
+}
+
+@media (max-width: 560px) {
+  .modal .form-grid { grid-template-columns: 1fr; }
+  .modal .form-grid .span-2 { grid-column: span 1; }
+  .modal { padding: 18px; }
 }

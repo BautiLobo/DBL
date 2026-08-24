@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { useState } from 'react'
 import { useAuth } from '../lib/auth'
 import Logo from './Logo'
 
@@ -13,10 +14,26 @@ const NAV = [
 
 export default function Layout() {
   const { signOut, session } = useAuth()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <header className="mobile-topbar">
+        <div className="brand">
+          <Logo size={26} />
+          <div className="brand-name">DBL Repuestos</div>
+        </div>
+        <button
+          className="menu-toggle"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
+          aria-expanded={menuOpen}
+        >
+          {menuOpen ? '✕' : '☰'}
+        </button>
+      </header>
+
+      <aside className={'sidebar' + (menuOpen ? ' open' : '')}>
         <div className="brand">
           <Logo size={30} />
           <div>
@@ -31,6 +48,7 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               end={item.end}
+              onClick={() => setMenuOpen(false)}
               className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
             >
               {item.label}
@@ -45,6 +63,8 @@ export default function Layout() {
           <button className="logout-btn" onClick={() => signOut()}>Cerrar sesión</button>
         </div>
       </aside>
+
+      {menuOpen && <div className="sidebar-backdrop" onClick={() => setMenuOpen(false)} />}
 
       <main className="main">
         <Outlet />
