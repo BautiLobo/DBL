@@ -43,6 +43,7 @@ async function handleOrder(resource) {
       ml_shipment_id,
       shipping_status,
       tracking_number,
+      ml_buyer_id: order.buyer?.id ? String(order.buyer.id) : null,
     })
     .select()
     .single()

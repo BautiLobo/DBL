@@ -49,6 +49,12 @@ export default function Pedidos() {
   const [buyerName, setBuyerName] = useState('')
   const [items, setItems] = useState([{ ...EMPTY_ITEM }])
 
+  const [messagesSale, setMessagesSale] = useState(null)
+  const [messages, setMessages] = useState(null)
+  const [messageText, setMessageText] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [messagesError, setMessagesError] = useState('')
+
   async function loadData() {
     setLoading(true)
     const { data: salesData } = await supabase
@@ -153,6 +159,41 @@ export default function Pedidos() {
     }
   }
 
+  async function openMessages(sale) {
+    setMessagesSale(sale)
+    setMessages(null)
+    setMessageText('')
+    setMessagesError('')
+    try {
+      const res = await fetch('/api/ml/messages?sale_id=' + sale.id)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error trayendo mensajes')
+      setMessages(data.messages || [])
+    } catch (e) {
+      setMessagesError(e.message)
+    }
+  }
+
+  async function sendMessage() {
+    if (!messageText.trim() || !messagesSale) return
+    setSendingMessage(true)
+    setMessagesError('')
+    try {
+      const res = await fetch('/api/ml/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sale_id: messagesSale.id, text: messageText }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error enviando el mensaje')
+      setMessageText('')
+      openMessages(messagesSale)
+    } catch (e) {
+      setMessagesError(e.message)
+    }
+    setSendingMessage(false)
+  }
+
   const filtered = sales.filter((s) => filter === 'all' || s.source === filter)
 
   return (
@@ -192,6 +233,7 @@ export default function Pedidos() {
                 <th>Total</th>
                 <th>Estado</th>
                 <th>Envío</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -225,6 +267,13 @@ export default function Pedidos() {
                       </div>
                     ) : (
                       '—'
+                    )}
+                  </td>
+                  <td>
+                    {s.source === 'mercadolibre' && s.ml_order_id && (
+                      <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => openMessages(s)}>
+                        💬 Mensajes
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -267,6 +316,53 @@ export default function Pedidos() {
             ))}
           </div>
           <button type="button" className="btn" style={{ marginTop: 8 }} onClick={addItemRow}>+ Agregar producto</button>
+        </Modal>
+      )}
+
+      {messagesSale && (
+        <Modal
+          title={`Mensajes — ${messagesSale.buyer_name || 'comprador'}`}
+          onClose={() => setMessagesSale(null)}
+          actions={<button className="btn" onClick={() => setMessagesSale(null)}>Cerrar</button>}
+        >
+          {messagesError && <div className="auth-error" style={{ marginBottom: 10 }}>{messagesError}</div>}
+
+          {messages === null ? (
+            <div className="empty-state">Cargando…</div>
+          ) : messages.length === 0 ? (
+            <div className="empty-state">Todavía no hay mensajes en este pedido.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflowY: 'auto' }}>
+              {messages.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    alignSelf: m.from_buyer ? 'flex-start' : 'flex-end',
+                    background: m.from_buyer ? 'var(--surface-2)' : 'var(--accent-soft)',
+                    borderRadius: 10,
+                    padding: '8px 12px',
+                    maxWidth: '80%',
+                    fontSize: 13.5,
+                  }}
+                >
+                  {m.text}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
+            <input
+              className="input"
+              placeholder="Escribir un mensaje…"
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+            />
+            <button className="btn btn-primary" disabled={sendingMessage} onClick={sendMessage}>
+              {sendingMessage ? 'Enviando…' : 'Enviar'}
+            </button>
+          </div>
         </Modal>
       )}
     </div>

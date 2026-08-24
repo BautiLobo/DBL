@@ -58,6 +58,7 @@ CREATE TABLE sales (
   ml_shipment_id  TEXT,
   shipping_status TEXT,
   tracking_number TEXT,
+  ml_buyer_id     TEXT,
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
