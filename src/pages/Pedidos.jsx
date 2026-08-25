@@ -70,7 +70,7 @@ export default function Pedidos() {
       .limit(200)
     setSales(salesData || [])
 
-    const { data: prods } = await supabase.from('products').select('id, title, sale_price, stock_qty').eq('active', true).order('title')
+    const { data: prods } = await supabase.from('products').select('id, title, sale_price, cost_price, stock_qty').eq('active', true).order('title')
     setProducts(prods || [])
     setLoading(false)
   }
@@ -132,6 +132,7 @@ export default function Pedidos() {
           unit_price: Number(it.unit_price),
         }))
       )
+      let cogs = 0
       for (const it of validItems) {
         const p = products.find((p) => String(p.id) === String(it.product_id))
         if (p) {
@@ -143,8 +144,25 @@ export default function Pedidos() {
             reason: 'Venta manual',
             related_sale_id: sale.id,
           })
+          cogs += (Number(p.cost_price) || 0) * Number(it.qty)
         }
       }
+      await supabase.from('accounting_entries').insert([
+        {
+          type: 'income',
+          category: 'ventas',
+          amount: total,
+          description: `Venta manual${buyerName ? ' — ' + buyerName : ''}`,
+          related_sale_id: sale.id,
+        },
+        {
+          type: 'expense',
+          category: 'costo de mercadería',
+          amount: cogs,
+          description: `Costo de mercadería — venta #${sale.id}`,
+          related_sale_id: sale.id,
+        },
+      ])
     }
 
     setSaving(false)
@@ -163,10 +181,10 @@ export default function Pedidos() {
 
   async function refreshShipping(sale) {
     try {
-      const res = await fetch('/api/ml/shipment', {
+      const res = await fetch('/api/ml/orders?action=refresh-shipping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sale_id: sale.id }),
+        body: JSON.stringify({ action: 'refresh-shipping', sale_id: sale.id }),
       })
       if (res.ok) {
         loadData()
@@ -213,7 +231,7 @@ export default function Pedidos() {
     setMessageText('')
     setMessagesError('')
     try {
-      const res = await fetch('/api/ml/messages?sale_id=' + sale.id)
+      const res = await fetch('/api/ml/orders?action=messages&sale_id=' + sale.id)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error trayendo mensajes')
       setMessages(data.messages || [])
@@ -227,10 +245,10 @@ export default function Pedidos() {
     setSendingMessage(true)
     setMessagesError('')
     try {
-      const res = await fetch('/api/ml/messages', {
+      const res = await fetch('/api/ml/orders?action=send-message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sale_id: messagesSale.id, text: messageText }),
+        body: JSON.stringify({ action: 'send-message', sale_id: messagesSale.id, text: messageText }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error enviando el mensaje')

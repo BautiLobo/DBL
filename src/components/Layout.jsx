@@ -7,6 +7,8 @@ const NAV = [
   { to: '/', label: 'Panel', end: true },
   { to: '/inventario', label: 'Inventario' },
   { to: '/pedidos', label: 'Pedidos' },
+  { to: '/preguntas', label: 'Preguntas' },
+  { to: '/reclamos', label: 'Reclamos' },
   { to: '/contabilidad', label: 'Contabilidad' },
   { to: '/estadisticas', label: 'Estadísticas' },
   { to: '/configuracion', label: 'Configuración' },

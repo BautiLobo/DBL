@@ -53,6 +53,7 @@ async function handleOrder(resource) {
     return
   }
 
+  let cogs = 0
   for (const orderItem of order.order_items || []) {
     const mlItemId = orderItem.item?.id
     const { data: product } = await db.from('products').select('*').eq('ml_item_id', mlItemId).maybeSingle()
@@ -73,7 +74,26 @@ async function handleOrder(resource) {
       reason: `Venta Mercado Libre #${order.id}`,
       related_sale_id: sale.id,
     })
+
+    cogs += (Number(product.cost_price) || 0) * Number(orderItem.quantity)
   }
+
+  await db.from('accounting_entries').insert([
+    {
+      type: 'income',
+      category: 'ventas',
+      amount: sale.total_amount,
+      description: `Venta Mercado Libre #${order.id}`,
+      related_sale_id: sale.id,
+    },
+    {
+      type: 'expense',
+      category: 'costo de mercadería',
+      amount: cogs,
+      description: `Costo de mercadería — venta #${sale.id}`,
+      related_sale_id: sale.id,
+    },
+  ])
 }
 
 async function handleQuestion(resource) {

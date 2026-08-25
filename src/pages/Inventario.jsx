@@ -40,9 +40,14 @@ const EMPTY_FORM = {
 const ML_STATUS_LABEL = { active: 'Activa', paused: 'Pausada', closed: 'Finalizada' }
 const ML_STATUS_BADGE = { active: 'badge-green', paused: 'badge-warning', closed: 'badge-neutral' }
 
+// Mercado Libre solo acepta JPG/PNG y hasta 10MB por foto.
+const ML_ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
+const ML_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
 export default function Inventario() {
   const [products, setProducts] = useState([])
   const [photosByProduct, setPhotosByProduct] = useState({})
+  const [variantsByProduct, setVariantsByProduct] = useState({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -51,14 +56,20 @@ export default function Inventario() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [photoError, setPhotoError] = useState('')
 
   const [mlBusy, setMlBusy] = useState(false)
   const [mlError, setMlError] = useState('')
-  const [categoryQuery, setCategoryQuery] = useState('')
-  const [categorySuggestions, setCategorySuggestions] = useState([])
+  const [browseStack, setBrowseStack] = useState([])
+  const [browseNode, setBrowseNode] = useState(null)
+  const [browseLoading, setBrowseLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState(null)
+  const [categoryAttrs, setCategoryAttrs] = useState([])
+  const [attrValues, setAttrValues] = useState({})
   const [condition, setCondition] = useState('new')
   const [reviews, setReviews] = useState(null)
+  const [variants, setVariants] = useState([])
+  const [removedVariantIds, setRemovedVariantIds] = useState([])
 
   const editingProduct = form.id ? products.find((p) => p.id === form.id) : null
 
@@ -82,22 +93,36 @@ export default function Inventario() {
       map[p.product_id].push(p)
     }
     setPhotosByProduct(map)
+
+    const { data: vs } = await supabase.from('product_variants').select('*').order('id')
+    const vmap = {}
+    for (const v of vs || []) {
+      if (!vmap[v.product_id]) vmap[v.product_id] = []
+      vmap[v.product_id].push(v)
+    }
+    setVariantsByProduct(vmap)
+
     setLoading(false)
   }
 
   useEffect(() => { loadProducts() }, [])
 
-  function resetMlUi(title) {
+  function resetMlUi() {
     setMlError('')
-    setCategoryQuery(title || '')
-    setCategorySuggestions([])
     setSelectedCategory(null)
+    setCategoryAttrs([])
+    setAttrValues({})
     setCondition('new')
+    setBrowseStack([])
+    setBrowseNode(null)
   }
 
   function openNew() {
     setForm(EMPTY_FORM)
-    resetMlUi('')
+    resetMlUi()
+    setVariants([])
+    setRemovedVariantIds([])
+    setPhotoError('')
     setModalOpen(true)
   }
 
@@ -116,14 +141,42 @@ export default function Inventario() {
       min_stock_alert: p.min_stock_alert ?? '2',
       ml_item_id: p.ml_item_id || '',
     })
-    resetMlUi(p.title)
+    resetMlUi()
+    setVariants(
+      (variantsByProduct[p.id] || []).map((v) => ({
+        id: v.id,
+        talle: v.attributes?.Talle || '',
+        color: v.attributes?.Color || '',
+        sku: v.sku || '',
+        stock_qty: v.stock_qty,
+        ml_variation_id: v.ml_variation_id,
+      }))
+    )
+    setRemovedVariantIds([])
+    setPhotoError('')
     setModalOpen(true)
+  }
+
+  function addVariantRow() {
+    setVariants((prev) => [...prev, { id: null, talle: '', color: '', sku: '', stock_qty: 0, ml_variation_id: null }])
+  }
+
+  function updateVariantRow(idx, patch) {
+    setVariants((prev) => prev.map((v, i) => (i === idx ? { ...v, ...patch } : v)))
+  }
+
+  function removeVariantRow(idx) {
+    setVariants((prev) => {
+      const target = prev[idx]
+      if (target?.id) setRemovedVariantIds((ids) => [...ids, target.id])
+      return prev.filter((_, i) => i !== idx)
+    })
   }
 
   async function loadReviews(itemId) {
     setReviews(null)
     try {
-      const res = await fetch('/api/ml/reviews?item_id=' + encodeURIComponent(itemId))
+      const res = await fetch('/api/ml/listings?action=reviews&item_id=' + encodeURIComponent(itemId))
       const data = await res.json()
       if (res.ok) setReviews(data)
     } catch {
@@ -139,40 +192,95 @@ export default function Inventario() {
     }
   }, [modalOpen, editingProduct?.ml_item_id])
 
-  async function searchCategory() {
-    if (!categoryQuery.trim()) return
+  async function loadCategoryNode(id) {
+    setBrowseLoading(true)
+    setMlError('')
+    try {
+      const res = await fetch('/api/ml/listings?action=category-children' + (id ? '&id=' + encodeURIComponent(id) : ''))
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error consultando categorías')
+      setBrowseNode(data)
+    } catch (e) {
+      setMlError(e.message)
+    }
+    setBrowseLoading(false)
+  }
+
+  useEffect(() => {
+    if (modalOpen && editingProduct && !editingProduct.ml_item_id) {
+      setBrowseStack([])
+      loadCategoryNode(null)
+    }
+  }, [modalOpen, editingProduct?.id])
+
+  function browseInto(child) {
+    setBrowseStack((prev) => [...prev, child])
+    loadCategoryNode(child.id)
+  }
+
+  function browseBackTo(idx) {
+    const newStack = browseStack.slice(0, idx + 1)
+    setBrowseStack(newStack)
+    loadCategoryNode(newStack.length ? newStack[newStack.length - 1].id : null)
+  }
+
+  function browseHome() {
+    setBrowseStack([])
+    loadCategoryNode(null)
+  }
+
+  async function selectCategory() {
+    if (!browseNode) return
+    setSelectedCategory({ category_id: browseNode.id, category_name: browseNode.name })
     setMlBusy(true)
     setMlError('')
     try {
-      const res = await fetch('/api/ml/category-predict?q=' + encodeURIComponent(categoryQuery))
+      const res = await fetch('/api/ml/listings?action=category-attributes&id=' + encodeURIComponent(browseNode.id))
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error consultando categorías')
-      setCategorySuggestions(data.suggestions || [])
+      if (!res.ok) throw new Error(data.error || 'Error consultando atributos de la categoría')
+      setCategoryAttrs(data.attributes || [])
+      setAttrValues({})
     } catch (e) {
       setMlError(e.message)
     }
     setMlBusy(false)
   }
 
+  function clearSelectedCategory() {
+    setSelectedCategory(null)
+    setCategoryAttrs([])
+    setAttrValues({})
+  }
+
   async function publishToMl() {
     if (!selectedCategory || !form.id) return
+    const missing = categoryAttrs.filter((a) => !(attrValues[a.id] || '').trim())
+    if (missing.length > 0) {
+      setMlError(`Completá los campos obligatorios: ${missing.map((a) => a.name).join(', ')}`)
+      return
+    }
+    if (editingPhotos.length === 0) {
+      setMlError('Subí al menos una foto en la sección de arriba antes de publicar.')
+      return
+    }
     setMlBusy(true)
     setMlError('')
     try {
-      const res = await fetch('/api/ml/items-create', {
+      const res = await fetch('/api/ml/listings?action=create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'create',
           product_id: form.id,
           category_id: selectedCategory.category_id,
           condition,
           listing_type_id: 'gold_special',
+          attributes: categoryAttrs.map((a) => ({ id: a.id, value_name: attrValues[a.id] })),
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error + (data.detail ? ': ' + data.detail : ''))
-      setCategorySuggestions([])
-      setSelectedCategory(null)
+      clearSelectedCategory()
       loadProducts()
     } catch (e) {
       setMlError(e.message)
@@ -185,10 +293,10 @@ export default function Inventario() {
     setMlBusy(true)
     setMlError('')
     try {
-      const res = await fetch('/api/ml/items-update', {
+      const res = await fetch('/api/ml/listings?action=update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: form.id, status }),
+        body: JSON.stringify({ action: 'update', product_id: form.id, status }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error actualizando la publicación')
@@ -216,21 +324,52 @@ export default function Inventario() {
       ml_item_id: form.ml_item_id || null,
     }
 
+    let productId = form.id
+
     if (form.id) {
       await supabase.from('products').update(payload).eq('id', form.id)
       if (editingProduct?.ml_item_id) {
-        fetch('/api/ml/items-update', {
+        fetch('/api/ml/listings?action=update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ product_id: form.id, price: payload.sale_price, stock_qty: payload.stock_qty }),
+          body: JSON.stringify({ action: 'update', product_id: form.id, price: payload.sale_price, stock_qty: payload.stock_qty }),
         }).catch(() => {})
       }
     } else {
-      await supabase.from('products').insert(payload)
+      const { data: inserted } = await supabase.from('products').insert(payload).select().single()
+      productId = inserted?.id
     }
+
+    if (productId) await syncVariants(productId)
+
     setSaving(false)
     setModalOpen(false)
     loadProducts()
+  }
+
+  async function syncVariants(productId) {
+    if (removedVariantIds.length > 0) {
+      await supabase.from('product_variants').delete().in('id', removedVariantIds)
+    }
+    for (const v of variants) {
+      const attributes = {}
+      if (v.talle?.trim()) attributes.Talle = v.talle.trim()
+      if (v.color?.trim()) attributes.Color = v.color.trim()
+      const row = { product_id: productId, attributes, sku: v.sku || null, stock_qty: Number(v.stock_qty) || 0 }
+
+      if (v.id) {
+        await supabase.from('product_variants').update(row).eq('id', v.id)
+        if (v.ml_variation_id) {
+          fetch('/api/ml/listings?action=update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', product_id: productId, variant_id: v.id, variant_stock_qty: row.stock_qty }),
+          }).catch(() => {})
+        }
+      } else if (Object.keys(attributes).length > 0) {
+        await supabase.from('product_variants').insert(row)
+      }
+    }
   }
 
   async function handleDelete(p) {
@@ -252,6 +391,15 @@ export default function Inventario() {
   }
 
   async function handlePhotoUpload(productId, file) {
+    setPhotoError('')
+    if (!ML_ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setPhotoError('Mercado Libre solo acepta fotos en formato JPG o PNG.')
+      return
+    }
+    if (file.size > ML_MAX_IMAGE_BYTES) {
+      setPhotoError('Mercado Libre no acepta fotos de más de 10 MB.')
+      return
+    }
     setUploading(true)
     const ext = file.name.split('.').pop()
     const path = `${productId}/${Date.now()}.${ext}`
@@ -467,6 +615,8 @@ export default function Inventario() {
           {form.id && (
             <div style={{ marginTop: 16 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Fotos</label>
+              <div style={{ fontSize: 11.5, color: 'var(--text-dim)', marginTop: 2 }}>JPG o PNG, hasta 10 MB (formato aceptado por Mercado Libre)</div>
+              {photoError && <div className="auth-error" style={{ marginTop: 8 }}>{photoError}</div>}
               <div className="photo-row">
                 {editingPhotos.map((photo) => (
                   <div className="photo-thumb" key={photo.id}>
@@ -478,7 +628,7 @@ export default function Inventario() {
                   {uploading ? '…' : '+'}
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png"
                     style={{ display: 'none' }}
                     onChange={(e) => e.target.files[0] && handlePhotoUpload(form.id, e.target.files[0])}
                   />
@@ -486,6 +636,31 @@ export default function Inventario() {
               </div>
             </div>
           )}
+
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Variantes (talle / color)</label>
+              <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={addVariantRow}>+ Agregar variante</button>
+            </div>
+            {variants.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>
+                Sin variantes: este producto se publica como un único ítem. Agregá variantes si vendés el mismo producto en distintos talles o colores.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {variants.map((v, idx) => (
+                  <div key={v.id ?? `new-${idx}`} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input className="input" placeholder="Talle" style={{ maxWidth: 90 }} value={v.talle} onChange={(e) => updateVariantRow(idx, { talle: e.target.value })} />
+                    <input className="input" placeholder="Color" style={{ maxWidth: 90 }} value={v.color} onChange={(e) => updateVariantRow(idx, { color: e.target.value })} />
+                    <input className="input" placeholder="SKU" style={{ maxWidth: 90 }} value={v.sku} onChange={(e) => updateVariantRow(idx, { sku: e.target.value })} />
+                    <input className="input" type="number" placeholder="Stock" style={{ maxWidth: 70 }} value={v.stock_qty} onChange={(e) => updateVariantRow(idx, { stock_qty: e.target.value })} />
+                    {v.ml_variation_id && <span className="badge badge-green" style={{ flexShrink: 0 }}>En ML</span>}
+                    <button type="button" className="btn btn-ghost btn-danger" onClick={() => removeVariantRow(idx)}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {form.id && (
             <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
@@ -518,43 +693,80 @@ export default function Inventario() {
                     </>
                   )}
                 </div>
+              ) : !selectedCategory ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                    Elegí la categoría navegando (el buscador de Mercado Libre está bloqueado para esta cuenta, así que recorremos el árbol de categorías).
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                    <button type="button" className="btn btn-ghost" style={{ padding: '2px 6px' }} onClick={browseHome}>Inicio</button>
+                    {browseStack.map((n, i) => (
+                      <span key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ color: 'var(--text-dim)' }}>›</span>
+                        <button type="button" className="btn btn-ghost" style={{ padding: '2px 6px' }} onClick={() => browseBackTo(i)}>{n.name}</button>
+                      </span>
+                    ))}
+                  </div>
+                  {browseLoading ? (
+                    <div className="empty-state" style={{ padding: 12 }}>Cargando…</div>
+                  ) : browseNode ? (
+                    <>
+                      <div style={{ fontWeight: 700 }}>{browseNode.name}</div>
+                      {browseNode.listing_allowed && (
+                        <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} disabled={mlBusy} onClick={selectCategory}>
+                          Publicar en "{browseNode.name}"
+                        </button>
+                      )}
+                      {browseNode.children.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+                          {browseNode.children.map((c) => (
+                            <button
+                              type="button"
+                              key={c.id}
+                              className="btn"
+                              style={{ justifyContent: 'flex-start' }}
+                              onClick={() => browseInto(c)}
+                            >
+                              {c.name} →
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : null}
+                </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input
-                      className="input"
-                      value={categoryQuery}
-                      onChange={(e) => setCategoryQuery(e.target.value)}
-                      placeholder="Buscar categoría…"
-                    />
-                    <button type="button" className="btn" disabled={mlBusy} onClick={searchCategory}>Buscar</button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="badge badge-orange">{selectedCategory.category_name}</span>
+                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={clearSelectedCategory}>Cambiar categoría</button>
                   </div>
-                  {categorySuggestions.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {categorySuggestions.map((c) => (
-                        <label key={c.category_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                          <input
-                            type="radio"
-                            name="ml-category"
-                            checked={selectedCategory?.category_id === c.category_id}
-                            onChange={() => setSelectedCategory(c)}
-                          />
-                          {c.category_name}
-                        </label>
-                      ))}
+                  {categoryAttrs.map((a) => (
+                    <div className="field" key={a.id}>
+                      <label>{a.name} *</label>
+                      {a.values.length > 0 ? (
+                        <select className="input" value={attrValues[a.id] || ''} onChange={(e) => setAttrValues({ ...attrValues, [a.id]: e.target.value })}>
+                          <option value="">Elegir…</option>
+                          {a.values.map((v) => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                      ) : (
+                        <input className="input" value={attrValues[a.id] || ''} onChange={(e) => setAttrValues({ ...attrValues, [a.id]: e.target.value })} />
+                      )}
                     </div>
+                  ))}
+                  <div className="field">
+                    <label>Condición</label>
+                    <select className="input" value={condition} onChange={(e) => setCondition(e.target.value)}>
+                      <option value="new">Nuevo</option>
+                      <option value="used">Usado</option>
+                    </select>
+                  </div>
+                  {editingPhotos.length === 0 && (
+                    <div className="auth-error">Subí al menos una foto en la sección de arriba antes de publicar.</div>
                   )}
-                  {selectedCategory && (
-                    <>
-                      <select className="input" value={condition} onChange={(e) => setCondition(e.target.value)}>
-                        <option value="new">Nuevo</option>
-                        <option value="used">Usado</option>
-                      </select>
-                      <button type="button" className="btn btn-primary" disabled={mlBusy} onClick={publishToMl}>
-                        {mlBusy ? 'Publicando…' : 'Publicar en Mercado Libre'}
-                      </button>
-                    </>
-                  )}
+                  <button type="button" className="btn btn-primary" disabled={mlBusy || editingPhotos.length === 0} onClick={publishToMl}>
+                    {mlBusy ? 'Publicando…' : 'Publicar en Mercado Libre'}
+                  </button>
                 </div>
               )}
 

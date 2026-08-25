@@ -32,6 +32,16 @@ CREATE TABLE product_photos (
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE product_variants (
+  id              BIGSERIAL PRIMARY KEY,
+  product_id      BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  attributes      JSONB NOT NULL DEFAULT '{}'::jsonb,   -- ej: {"Talle":"M","Color":"Rojo"}
+  sku             TEXT,
+  stock_qty       INTEGER NOT NULL DEFAULT 0,
+  ml_variation_id TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── MOVIMIENTOS DE STOCK ─────────────────────────────────────
 CREATE TABLE stock_movements (
   id              BIGSERIAL PRIMARY KEY,
@@ -156,6 +166,7 @@ CREATE POLICY "product_photos_auth_delete"
 
 ALTER TABLE products            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_photos      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_variants    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_movements     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sale_items          ENABLE ROW LEVEL SECURITY;
@@ -166,6 +177,7 @@ ALTER TABLE ml_credentials      ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "auth_all_products"           ON products           FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all_product_photos"     ON product_photos     FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_all_product_variants"   ON product_variants   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all_stock_movements"    ON stock_movements    FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all_sales"              ON sales              FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all_sale_items"         ON sale_items         FOR ALL TO authenticated USING (true) WITH CHECK (true);

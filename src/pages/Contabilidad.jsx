@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney, formatDate } from '../lib/format'
 import Modal from '../components/Modal'
 
-const CATEGORIES = ['ventas', 'compra de stock', 'comision ml', 'envio', 'impuestos', 'servicios', 'otros']
+const CATEGORIES = ['ventas', 'costo de mercadería', 'compra de stock', 'comision ml', 'envio', 'impuestos', 'servicios', 'otros']
 
 export default function Contabilidad() {
   const [entries, setEntries] = useState([])
@@ -27,7 +27,9 @@ export default function Contabilidad() {
   const totals = useMemo(() => {
     const income = entries.filter((e) => e.type === 'income').reduce((s, e) => s + Number(e.amount), 0)
     const expense = entries.filter((e) => e.type === 'expense').reduce((s, e) => s + Number(e.amount), 0)
-    return { income, expense, balance: income - expense }
+    const ventas = entries.filter((e) => e.type === 'income' && e.category === 'ventas').reduce((s, e) => s + Number(e.amount), 0)
+    const cogs = entries.filter((e) => e.type === 'expense' && e.category === 'costo de mercadería').reduce((s, e) => s + Number(e.amount), 0)
+    return { income, expense, balance: income - expense, grossProfit: ventas - cogs }
   }, [entries])
 
   function openNew() {
@@ -79,6 +81,10 @@ export default function Contabilidad() {
           <div className="stat-label">Balance</div>
           <div className="stat-value accent">{formatMoney(totals.balance)}</div>
         </div>
+        <div className="stat-card">
+          <div className="stat-label">Ganancia bruta (ventas − costo)</div>
+          <div className="stat-value green">{formatMoney(totals.grossProfit)}</div>
+        </div>
       </div>
 
       <div className="toolbar">
@@ -112,7 +118,10 @@ export default function Contabilidad() {
                   <td>{formatDate(e.entry_date)}</td>
                   <td><span className={'badge ' + (e.type === 'income' ? 'badge-green' : 'badge-danger')}>{e.type === 'income' ? 'Ingreso' : 'Egreso'}</span></td>
                   <td>{e.category}</td>
-                  <td>{e.description || '—'}</td>
+                  <td>
+                    {e.description || '—'}
+                    {e.related_sale_id && <span className="badge badge-neutral" style={{ marginLeft: 6 }}>Venta #{e.related_sale_id}</span>}
+                  </td>
                   <td style={{ fontWeight: 600, color: e.type === 'income' ? 'var(--green)' : 'var(--danger)' }}>
                     {e.type === 'income' ? '+' : '−'}{formatMoney(e.amount)}
                   </td>

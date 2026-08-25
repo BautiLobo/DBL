@@ -5,6 +5,8 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Inventario from './pages/Inventario'
 import Pedidos from './pages/Pedidos'
+import Preguntas from './pages/Preguntas'
+import Reclamos from './pages/Reclamos'
 import Contabilidad from './pages/Contabilidad'
 import Estadisticas from './pages/Estadisticas'
 import Configuracion from './pages/Configuracion'
@@ -32,6 +34,8 @@ function Routed() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/inventario" element={<Inventario />} />
         <Route path="/pedidos" element={<Pedidos />} />
+        <Route path="/preguntas" element={<Preguntas />} />
+        <Route path="/reclamos" element={<Reclamos />} />
         <Route path="/contabilidad" element={<Contabilidad />} />
         <Route path="/estadisticas" element={<Estadisticas />} />
         <Route path="/configuracion" element={<Configuracion />} />
