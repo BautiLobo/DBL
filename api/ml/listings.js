@@ -113,6 +113,10 @@ async function create(req, res, db) {
 
   const { data: variants } = await db.from('product_variants').select('*').eq('product_id', product_id).order('id')
 
+  const descriptionParts = [product.description]
+  if (product.brand_compat) descriptionParts.push(`Compatible con: ${product.brand_compat}`)
+  const descriptionText = descriptionParts.filter(Boolean).join('\n\n') || product.title
+
   const payload = {
     title: product.title.slice(0, 60),
     category_id,
@@ -120,7 +124,7 @@ async function create(req, res, db) {
     buying_mode: 'buy_it_now',
     condition: condition === 'used' ? 'used' : 'new',
     listing_type_id: listing_type_id || 'gold_special',
-    description: { plain_text: product.description || product.title },
+    description: { plain_text: descriptionText },
     pictures,
   }
 
