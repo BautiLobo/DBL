@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
-import { mlFetch } from '../_lib/mlToken.js'
+import { mlFetch, getValidAccessToken } from '../_lib/mlToken.js'
 
 // Trae los mensajes post-venta de un pedido de Mercado Libre.
 async function getMessages(req, res, db) {
@@ -83,6 +83,37 @@ async function refreshShipping(req, res, db) {
   }
 }
 
+// Descarga la etiqueta de envío (PDF) de Mercado Envíos para imprimir en hoja A4.
+async function shippingLabel(req, res, db) {
+  const saleId = req.query.sale_id
+  if (!saleId) return res.status(400).json({ error: 'Falta sale_id' })
+
+  const { data: sale } = await db.from('sales').select('ml_shipment_id').eq('id', saleId).maybeSingle()
+  if (!sale?.ml_shipment_id) return res.status(400).json({ error: 'Esta venta no tiene envío de Mercado Libre asociado' })
+
+  try {
+    const token = await getValidAccessToken()
+    if (!token) return res.status(400).json({ error: 'No hay una cuenta de Mercado Libre conectada' })
+
+    const mlRes = await fetch(
+      `https://api.mercadolibre.com/shipment_labels?shipment_ids=${sale.ml_shipment_id}&response_type=pdf`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    if (!mlRes.ok) {
+      console.error('Error trayendo etiqueta ML', mlRes.status, await mlRes.text())
+      return res.status(502).json({ error: 'No se pudo obtener la etiqueta de envío. Puede que todavía no esté lista.' })
+    }
+
+    const buffer = Buffer.from(await mlRes.arrayBuffer())
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="etiqueta-${sale.ml_shipment_id}.pdf"`)
+    res.status(200).send(buffer)
+  } catch (e) {
+    console.error('Error trayendo etiqueta ML', e)
+    res.status(502).json({ error: 'No se pudo obtener la etiqueta de envío' })
+  }
+}
+
 export default async function handler(req, res) {
   const db = supabaseAdmin()
   const action = req.query.action || req.body?.action
@@ -90,6 +121,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET' && action === 'messages') return getMessages(req, res, db)
   if (req.method === 'POST' && action === 'send-message') return sendMessage(req, res, db)
   if (req.method === 'POST' && action === 'refresh-shipping') return refreshShipping(req, res, db)
+  if (req.method === 'GET' && action === 'shipping-label') return shippingLabel(req, res, db)
 
   res.status(400).json({ error: 'Acción no reconocida' })
 }

@@ -495,6 +495,15 @@ export default function Pedidos() {
                 <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => refreshShipping(detailSale)}>
                   ↻ Actualizar
                 </button>
+                <a
+                  href={`/api/ml/orders?action=shipping-label&sale_id=${detailSale.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12 }}
+                >
+                  🖨 Imprimir etiqueta
+                </a>
               </div>
             </div>
           )}
