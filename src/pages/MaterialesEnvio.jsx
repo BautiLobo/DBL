@@ -59,6 +59,16 @@ export default function MaterialesEnvio() {
     }
     if (form.id) {
       await supabase.from('shipping_supplies').update(payload).eq('id', form.id)
+      const prevQty = supplies.find((s) => s.id === form.id)?.stock_qty ?? payload.stock_qty
+      const stockIncrease = payload.stock_qty - prevQty
+      if (stockIncrease > 0 && payload.cost_price > 0) {
+        await supabase.from('accounting_entries').insert({
+          type: 'expense',
+          category: 'insumos de envío',
+          amount: payload.cost_price * stockIncrease,
+          description: `Compra insumo de envío: ${payload.name} x${stockIncrease}`,
+        })
+      }
     } else {
       await supabase.from('shipping_supplies').insert(payload)
       if (payload.stock_qty > 0 && payload.cost_price > 0) {

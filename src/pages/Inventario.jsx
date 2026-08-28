@@ -354,6 +354,15 @@ export default function Inventario() {
 
     if (form.id) {
       await supabase.from('products').update(payload).eq('id', form.id)
+      const stockIncrease = payload.stock_qty - (editingProduct?.stock_qty ?? payload.stock_qty)
+      if (stockIncrease > 0 && payload.cost_price > 0) {
+        await supabase.from('accounting_entries').insert({
+          type: 'expense',
+          category: 'compra de stock',
+          amount: payload.cost_price * stockIncrease,
+          description: `Compra de stock: ${payload.title} x${stockIncrease}`,
+        })
+      }
       if (editingProduct?.ml_item_id) {
         fetch('/api/ml/listings?action=update', {
           method: 'POST',
