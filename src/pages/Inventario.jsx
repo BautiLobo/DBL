@@ -40,9 +40,26 @@ const EMPTY_FORM = {
 const ML_STATUS_LABEL = { active: 'Activa', paused: 'Pausada', closed: 'Finalizada' }
 const ML_STATUS_BADGE = { active: 'badge-green', paused: 'badge-warning', closed: 'badge-neutral' }
 
-// Mercado Libre solo acepta JPG/PNG y hasta 10MB por foto.
+// Mercado Libre solo acepta JPG/PNG, hasta 10MB, y mínimo 500x500px por foto.
 const ML_ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const ML_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const ML_MIN_IMAGE_DIMENSION = 500
+
+function getImageDimensions(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      resolve({ width: img.naturalWidth, height: img.naturalHeight })
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('No se pudo leer la imagen'))
+    }
+    img.src = url
+  })
+}
 
 export default function Inventario() {
   const [products, setProducts] = useState([])
@@ -409,6 +426,16 @@ export default function Inventario() {
       setPhotoError('Mercado Libre no acepta fotos de más de 10 MB.')
       return
     }
+    try {
+      const { width, height } = await getImageDimensions(file)
+      if (width < ML_MIN_IMAGE_DIMENSION || height < ML_MIN_IMAGE_DIMENSION) {
+        setPhotoError(`Mercado Libre exige fotos de al menos ${ML_MIN_IMAGE_DIMENSION}x${ML_MIN_IMAGE_DIMENSION}px (esta es ${width}x${height}px).`)
+        return
+      }
+    } catch {
+      setPhotoError('No se pudo leer la foto, probá con otro archivo.')
+      return
+    }
     setUploading(true)
     const ext = file.name.split('.').pop()
     const path = `${productId}/${Date.now()}.${ext}`
@@ -630,7 +657,7 @@ export default function Inventario() {
           {form.id && (
             <div style={{ marginTop: 16 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Fotos</label>
-              <div style={{ fontSize: 11.5, color: 'var(--text-dim)', marginTop: 2 }}>JPG o PNG, hasta 10 MB (formato aceptado por Mercado Libre)</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-dim)', marginTop: 2 }}>JPG o PNG, hasta 10 MB, mínimo 500x500px (formato exigido por Mercado Libre)</div>
               {photoError && <div className="auth-error" style={{ marginTop: 8 }}>{photoError}</div>}
               <div className="photo-row">
                 {editingPhotos.map((photo) => (
