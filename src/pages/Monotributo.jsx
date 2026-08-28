@@ -31,12 +31,12 @@ export default function Monotributo() {
   const [saving, setSaving] = useState(false)
   const [revenue12m, setRevenue12m] = useState(0)
   const [paidThisMonth, setPaidThisMonth] = useState(false)
-  const [registering, setRegistering] = useState(false)
 
   async function loadAll() {
     setLoading(true)
     const { data: settingsRows } = await supabase.from('settings').select('*').eq('key', 'monotributo_category')
-    setCategory(settingsRows?.[0]?.value || '')
+    const cat = settingsRows?.[0]?.value || ''
+    setCategory(cat)
 
     const from = new Date()
     from.setMonth(from.getMonth() - 12)
@@ -56,7 +56,21 @@ export default function Monotributo() {
       .eq('type', 'expense')
       .eq('category', 'monotributo')
       .gte('entry_date', ymd(monthStart))
-    setPaidThisMonth((paidRows || []).length > 0)
+    let paid = (paidRows || []).length > 0
+
+    const cur = MONOTRIBUTO_TABLE.find((c) => c.cat === cat) || null
+    if (!paid && cur) {
+      const today = new Date()
+      await supabase.from('accounting_entries').insert({
+        type: 'expense',
+        category: 'monotributo',
+        amount: cur.fee,
+        description: `Cuota monotributo categoría ${cat} - ${MONTH_LABEL.format(today)}`,
+        entry_date: ymd(today),
+      })
+      paid = true
+    }
+    setPaidThisMonth(paid)
 
     setLoading(false)
   }
@@ -64,24 +78,9 @@ export default function Monotributo() {
   useEffect(() => { loadAll() }, [])
 
   async function saveCategory(newCat) {
-    setCategory(newCat)
     setSaving(true)
     await supabase.from('settings').upsert([{ key: 'monotributo_category', value: newCat }])
     setSaving(false)
-  }
-
-  async function registerPayment() {
-    if (!current) return
-    setRegistering(true)
-    const today = new Date()
-    await supabase.from('accounting_entries').insert({
-      type: 'expense',
-      category: 'monotributo',
-      amount: current.fee,
-      description: `Cuota monotributo categoría ${category} - ${MONTH_LABEL.format(today)}`,
-      entry_date: ymd(today),
-    })
-    setRegistering(false)
     loadAll()
   }
 
@@ -113,15 +112,9 @@ export default function Monotributo() {
             <div className="stat-label">Cuota mensual ({category})</div>
             <div className="stat-value">{formatMoney(current.fee)}</div>
             {!loading && (
-              paidThisMonth ? (
-                <div style={{ marginTop: 8 }}>
-                  <span className="badge badge-green">Registrada este mes</span>
-                </div>
-              ) : (
-                <button className="btn btn-primary" style={{ marginTop: 8, fontSize: 12 }} disabled={registering} onClick={registerPayment}>
-                  {registering ? 'Registrando…' : 'Registrar pago del mes en Contabilidad'}
-                </button>
-              )
+              <div style={{ marginTop: 8 }}>
+                <span className="badge badge-green">✓ Cargada en Contabilidad este mes</span>
+              </div>
             )}
           </div>
         )}
@@ -191,7 +184,8 @@ export default function Monotributo() {
         Tabla vigente desde agosto 2026 para venta de bienes muebles (RG ARCA, ajuste +16,85%). Se actualiza cada semestre
         (enero y julio) — verificá los montos oficiales en arca.gob.ar antes de pagar o recategorizarte. La facturación de
         arriba se calcula con los movimientos cargados en Contabilidad (categoría "ventas"), no incluye lo que hayas
-        facturado antes de usar esta app.
+        facturado antes de usar esta app. La cuota del mes se carga sola como egreso en Contabilidad la primera vez que
+        entrás a esta página cada mes (categoría "monotributo") — no hace falta ningún botón.
       </p>
     </div>
   )
