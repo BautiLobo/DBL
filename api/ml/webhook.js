@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js'
 import { mlFetch } from '../_lib/mlToken.js'
+import { sendPushToAll } from '../_lib/webpush.js'
 
 const STATUS_MAP = {
   paid: 'paid',
@@ -94,6 +95,13 @@ async function handleOrder(resource) {
       related_sale_id: sale.id,
     },
   ])
+
+  const amountLabel = Number(sale.total_amount || 0).toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })
+  await sendPushToAll({
+    title: '🛒 Nueva venta en Mercado Libre',
+    body: `${sale.buyer_name || 'Comprador'} — ${amountLabel}`,
+    url: '/pedidos',
+  })
 }
 
 async function handleQuestion(resource) {
@@ -116,6 +124,12 @@ async function handleQuestion(resource) {
   } else {
     await db.from('ml_item_metrics').insert({ product_id: product.id, metric_date: today, questions: 1 })
   }
+
+  await sendPushToAll({
+    title: '❓ Nueva pregunta en Mercado Libre',
+    body: question.text || 'Tenés una pregunta nueva sobre una publicación.',
+    url: '/preguntas',
+  })
 }
 
 export default async function handler(req, res) {

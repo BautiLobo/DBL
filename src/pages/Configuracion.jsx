@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { pushSupported, getCurrentSubscription, subscribeToPush, unsubscribeFromPush } from '../lib/push'
 
 export default function Configuracion() {
   const [settings, setSettings] = useState({ business_name: '', default_min_stock_alert: '2' })
   const [savingSettings, setSavingSettings] = useState(false)
   const [mlStatus, setMlStatus] = useState(null) // null = cargando
   const [banner, setBanner] = useState(null)
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushError, setPushError] = useState('')
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -21,7 +25,27 @@ export default function Configuracion() {
       setSettings((s) => ({ ...s, ...map }))
     })
     refreshMlStatus()
+    if (pushSupported()) {
+      getCurrentSubscription().then((sub) => setPushEnabled(!!sub)).catch(() => {})
+    }
   }, [])
+
+  async function handleTogglePush() {
+    setPushBusy(true)
+    setPushError('')
+    try {
+      if (pushEnabled) {
+        await unsubscribeFromPush()
+        setPushEnabled(false)
+      } else {
+        await subscribeToPush()
+        setPushEnabled(true)
+      }
+    } catch (e) {
+      setPushError(e.message)
+    }
+    setPushBusy(false)
+  }
 
   async function refreshMlStatus() {
     try {
@@ -101,6 +125,27 @@ export default function Configuracion() {
             <a className="btn btn-primary" href="/api/ml/auth">Conectar con Mercado Libre</a>
           </div>
         )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h2>Notificaciones</h2>
+        <p style={{ marginTop: 6, marginBottom: 14 }}>
+          Recibí un aviso en este dispositivo cuando entre una venta o una pregunta nueva de Mercado Libre, sin tener que
+          tener la app abierta.
+        </p>
+        {!pushSupported() ? (
+          <div className="empty-state">Tu navegador no soporta notificaciones push.</div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className={'badge ' + (pushEnabled ? 'badge-green' : 'badge-neutral')}>
+              {pushEnabled ? 'Activadas' : 'Desactivadas'}
+            </span>
+            <button className="btn btn-primary" disabled={pushBusy} onClick={handleTogglePush}>
+              {pushBusy ? 'Procesando…' : pushEnabled ? 'Desactivar' : '🔔 Activar notificaciones'}
+            </button>
+          </div>
+        )}
+        {pushError && <div className="auth-error" style={{ marginTop: 10 }}>{pushError}</div>}
       </div>
 
       <div className="card">
