@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney, formatDate } from '../lib/format'
 import Modal from '../components/Modal'
 
-const CATEGORIES = ['ventas', 'costo de mercadería', 'compra de stock', 'comision ml', 'envio', 'impuestos', 'servicios', 'otros']
+const CATEGORIES = ['ventas', 'costo de mercadería', 'compra de stock', 'insumos de envío', 'monotributo', 'comision ml', 'envio', 'impuestos', 'servicios', 'otros']
 
 export default function Contabilidad() {
   const [entries, setEntries] = useState([])

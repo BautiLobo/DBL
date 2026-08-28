@@ -364,6 +364,14 @@ export default function Inventario() {
     } else {
       const { data: inserted } = await supabase.from('products').insert(payload).select().single()
       productId = inserted?.id
+      if (payload.stock_qty > 0 && payload.cost_price > 0) {
+        await supabase.from('accounting_entries').insert({
+          type: 'expense',
+          category: 'compra de stock',
+          amount: payload.cost_price * payload.stock_qty,
+          description: `Compra de stock inicial: ${payload.title} x${payload.stock_qty}`,
+        })
+      }
     }
 
     if (productId) await syncVariants(productId)
@@ -413,6 +421,14 @@ export default function Inventario() {
       qty: Math.abs(delta),
       reason: 'Ajuste manual',
     })
+    if (delta > 0 && p.cost_price > 0) {
+      await supabase.from('accounting_entries').insert({
+        type: 'expense',
+        category: 'compra de stock',
+        amount: p.cost_price * delta,
+        description: `Compra de stock: ${p.title} x${delta}`,
+      })
+    }
     loadProducts()
   }
 

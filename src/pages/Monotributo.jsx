@@ -23,11 +23,15 @@ function ymd(d) {
   return d.toISOString().slice(0, 10)
 }
 
+const MONTH_LABEL = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' })
+
 export default function Monotributo() {
   const [category, setCategory] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [revenue12m, setRevenue12m] = useState(0)
+  const [paidThisMonth, setPaidThisMonth] = useState(false)
+  const [registering, setRegistering] = useState(false)
 
   async function loadAll() {
     setLoading(true)
@@ -44,6 +48,16 @@ export default function Monotributo() {
       .gte('entry_date', ymd(from))
     setRevenue12m((entries || []).reduce((sum, e) => sum + Number(e.amount), 0))
 
+    const monthStart = new Date()
+    monthStart.setDate(1)
+    const { data: paidRows } = await supabase
+      .from('accounting_entries')
+      .select('id')
+      .eq('type', 'expense')
+      .eq('category', 'monotributo')
+      .gte('entry_date', ymd(monthStart))
+    setPaidThisMonth((paidRows || []).length > 0)
+
     setLoading(false)
   }
 
@@ -54,6 +68,21 @@ export default function Monotributo() {
     setSaving(true)
     await supabase.from('settings').upsert([{ key: 'monotributo_category', value: newCat }])
     setSaving(false)
+  }
+
+  async function registerPayment() {
+    if (!current) return
+    setRegistering(true)
+    const today = new Date()
+    await supabase.from('accounting_entries').insert({
+      type: 'expense',
+      category: 'monotributo',
+      amount: current.fee,
+      description: `Cuota monotributo categoría ${category} - ${MONTH_LABEL.format(today)}`,
+      entry_date: ymd(today),
+    })
+    setRegistering(false)
+    loadAll()
   }
 
   const current = MONOTRIBUTO_TABLE.find((c) => c.cat === category) || null
@@ -83,6 +112,17 @@ export default function Monotributo() {
           <div className="stat-card">
             <div className="stat-label">Cuota mensual ({category})</div>
             <div className="stat-value">{formatMoney(current.fee)}</div>
+            {!loading && (
+              paidThisMonth ? (
+                <div style={{ marginTop: 8 }}>
+                  <span className="badge badge-green">Registrada este mes</span>
+                </div>
+              ) : (
+                <button className="btn btn-primary" style={{ marginTop: 8, fontSize: 12 }} disabled={registering} onClick={registerPayment}>
+                  {registering ? 'Registrando…' : 'Registrar pago del mes en Contabilidad'}
+                </button>
+              )
+            )}
           </div>
         )}
       </div>

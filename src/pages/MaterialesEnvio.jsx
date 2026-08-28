@@ -61,6 +61,14 @@ export default function MaterialesEnvio() {
       await supabase.from('shipping_supplies').update(payload).eq('id', form.id)
     } else {
       await supabase.from('shipping_supplies').insert(payload)
+      if (payload.stock_qty > 0 && payload.cost_price > 0) {
+        await supabase.from('accounting_entries').insert({
+          type: 'expense',
+          category: 'insumos de envío',
+          amount: payload.cost_price * payload.stock_qty,
+          description: `Compra insumo de envío inicial: ${payload.name} x${payload.stock_qty}`,
+        })
+      }
     }
     setSaving(false)
     setModalOpen(false)
@@ -82,6 +90,14 @@ export default function MaterialesEnvio() {
       qty: Math.abs(delta),
       reason: delta > 0 ? 'Compra / reposición' : 'Uso en embalaje',
     })
+    if (delta > 0 && s.cost_price > 0) {
+      await supabase.from('accounting_entries').insert({
+        type: 'expense',
+        category: 'insumos de envío',
+        amount: s.cost_price * delta,
+        description: `Compra insumo de envío: ${s.name} x${delta}`,
+      })
+    }
     loadSupplies()
   }
 
