@@ -10,6 +10,7 @@ export default function Configuracion() {
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushBusy, setPushBusy] = useState(false)
   const [pushError, setPushError] = useState('')
+  const [testSent, setTestSent] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -41,6 +42,20 @@ export default function Configuracion() {
         await subscribeToPush()
         setPushEnabled(true)
       }
+    } catch (e) {
+      setPushError(e.message)
+    }
+    setPushBusy(false)
+  }
+
+  async function sendTestPush() {
+    setPushBusy(true)
+    setPushError('')
+    setTestSent(false)
+    try {
+      const res = await fetch('/api/push', { method: 'POST' })
+      if (!res.ok) throw new Error('No se pudo enviar la notificación de prueba')
+      setTestSent(true)
     } catch (e) {
       setPushError(e.message)
     }
@@ -143,8 +158,14 @@ export default function Configuracion() {
             <button className="btn btn-primary" disabled={pushBusy} onClick={handleTogglePush}>
               {pushBusy ? 'Procesando…' : pushEnabled ? 'Desactivar' : '🔔 Activar notificaciones'}
             </button>
+            {pushEnabled && (
+              <button className="btn" disabled={pushBusy} onClick={sendTestPush}>
+                Enviar notificación de prueba
+              </button>
+            )}
           </div>
         )}
+        {testSent && <div style={{ marginTop: 10, fontSize: 13, color: 'var(--green)' }}>Enviada — debería aparecerte en unos segundos.</div>}
         {pushError && <div className="auth-error" style={{ marginTop: 10 }}>{pushError}</div>}
       </div>
 
