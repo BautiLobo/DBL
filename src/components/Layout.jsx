@@ -4,14 +4,17 @@ import { useAuth } from '../lib/auth'
 import Logo from './Logo'
 
 const NAV = [
-  { to: '/', label: 'Panel', end: true },
-  { to: '/inventario', label: 'Inventario' },
-  { to: '/pedidos', label: 'Pedidos' },
-  { to: '/preguntas', label: 'Preguntas' },
-  { to: '/reclamos', label: 'Reclamos' },
-  { to: '/contabilidad', label: 'Contabilidad' },
-  { to: '/estadisticas', label: 'Estadísticas' },
-  { to: '/configuracion', label: 'Configuración' },
+  { to: '/', label: 'Panel', icon: '🏠', end: true },
+  { to: '/inventario', label: 'Inventario', icon: '📦' },
+  { to: '/materiales-envio', label: 'Materiales de envío', icon: '📮' },
+  { to: '/proveedores', label: 'Proveedores', icon: '🤝' },
+  { to: '/pedidos', label: 'Pedidos', icon: '🛒' },
+  { to: '/preguntas', label: 'Preguntas', icon: '❓' },
+  { to: '/reclamos', label: 'Reclamos', icon: '⚠️' },
+  { to: '/contabilidad', label: 'Contabilidad', icon: '💰' },
+  { to: '/monotributo', label: 'Monotributo', icon: '🧾' },
+  { to: '/estadisticas', label: 'Estadísticas', icon: '📈' },
+  { to: '/configuracion', label: 'Configuración', icon: '⚙️' },
 ]
 
 export default function Layout() {
@@ -44,7 +47,7 @@ export default function Layout() {
           </div>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {NAV.map((item) => (
             <NavLink
               key={item.to}
@@ -53,6 +56,7 @@ export default function Layout() {
               onClick={() => setMenuOpen(false)}
               className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
             >
+              <span className="nav-icon">{item.icon}</span>
               {item.label}
             </NavLink>
           ))}
