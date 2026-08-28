@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import Modal from '../components/Modal'
@@ -70,8 +70,17 @@ export default function Inventario() {
   const [reviews, setReviews] = useState(null)
   const [variants, setVariants] = useState([])
   const [removedVariantIds, setRemovedVariantIds] = useState([])
+  const [focusMl, setFocusMl] = useState(false)
+  const mlSectionRef = useRef(null)
 
   const editingProduct = form.id ? products.find((p) => p.id === form.id) : null
+
+  useEffect(() => {
+    if (modalOpen && focusMl && mlSectionRef.current) {
+      mlSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setFocusMl(false)
+    }
+  }, [modalOpen, focusMl])
 
   async function loadProducts() {
     setLoading(true)
@@ -155,6 +164,11 @@ export default function Inventario() {
     setRemovedVariantIds([])
     setPhotoError('')
     setModalOpen(true)
+  }
+
+  function openPublish(p) {
+    openEdit(p)
+    setFocusMl(true)
   }
 
   function addVariantRow() {
@@ -534,6 +548,9 @@ export default function Inventario() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
+                        {!p.ml_item_id && (
+                          <button className="btn btn-primary" onClick={() => openPublish(p)}>Publicar en ML</button>
+                        )}
                         <button className="btn" onClick={() => openEdit(p)}>Editar</button>
                         <button className="btn btn-ghost btn-danger" onClick={() => handleDelete(p)}>Eliminar</button>
                       </div>
@@ -663,7 +680,7 @@ export default function Inventario() {
           </div>
 
           {form.id && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <div ref={mlSectionRef} style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Mercado Libre</label>
                 {editingProduct?.ml_permalink && (
