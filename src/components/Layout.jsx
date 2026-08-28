@@ -8,6 +8,8 @@ const NAV = [
   { to: '/inventario', label: 'Inventario', icon: '📦' },
   { to: '/materiales-envio', label: 'Materiales de envío', icon: '📮' },
   { to: '/proveedores', label: 'Proveedores', icon: '🤝' },
+  { to: '/ordenes-compra', label: 'Órdenes de compra', icon: '📋' },
+  { to: '/clientes', label: 'Clientes', icon: '🧑‍🤝‍🧑' },
   { to: '/pedidos', label: 'Pedidos', icon: '🛒' },
   { to: '/preguntas', label: 'Preguntas', icon: '❓' },
   { to: '/reclamos', label: 'Reclamos', icon: '⚠️' },

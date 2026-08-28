@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard'
 import Inventario from './pages/Inventario'
 import MaterialesEnvio from './pages/MaterialesEnvio'
 import Proveedores from './pages/Proveedores'
+import OrdenesCompra from './pages/OrdenesCompra'
+import Clientes from './pages/Clientes'
 import Pedidos from './pages/Pedidos'
 import Preguntas from './pages/Preguntas'
 import Reclamos from './pages/Reclamos'
@@ -13,6 +15,7 @@ import Contabilidad from './pages/Contabilidad'
 import Monotributo from './pages/Monotributo'
 import Estadisticas from './pages/Estadisticas'
 import Configuracion from './pages/Configuracion'
+import Comprobante from './pages/Comprobante'
 
 function RequireAuth({ children }) {
   const { session, loading } = useAuth()
@@ -27,6 +30,7 @@ function Routed() {
   return (
     <Routes>
       <Route path="/login" element={loading ? null : session ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/comprobante/:saleId" element={<RequireAuth><Comprobante /></RequireAuth>} />
       <Route
         element={
           <RequireAuth>
@@ -38,6 +42,8 @@ function Routed() {
         <Route path="/inventario" element={<Inventario />} />
         <Route path="/materiales-envio" element={<MaterialesEnvio />} />
         <Route path="/proveedores" element={<Proveedores />} />
+        <Route path="/ordenes-compra" element={<OrdenesCompra />} />
+        <Route path="/clientes" element={<Clientes />} />
         <Route path="/pedidos" element={<Pedidos />} />
         <Route path="/preguntas" element={<Preguntas />} />
         <Route path="/reclamos" element={<Reclamos />} />

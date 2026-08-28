@@ -42,6 +42,7 @@ const EMPTY_ITEM = { product_id: '', qty: 1, unit_price: 0 }
 export default function Pedidos() {
   const [sales, setSales] = useState([])
   const [products, setProducts] = useState([])
+  const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [modalOpen, setModalOpen] = useState(false)
@@ -65,13 +66,17 @@ export default function Pedidos() {
     setLoading(true)
     const { data: salesData } = await supabase
       .from('sales')
-      .select('*, sale_items(*, products(title))')
+      .select('*, sale_items(*, products(title)), customers(name, phone, email)')
       .order('created_at', { ascending: false })
       .limit(200)
     setSales(salesData || [])
 
     const { data: prods } = await supabase.from('products').select('id, title, sale_price, cost_price, stock_qty').eq('active', true).order('title')
     setProducts(prods || [])
+
+    const { data: custs } = await supabase.from('customers').select('id, name, phone, email').eq('active', true).order('name')
+    setCustomers(custs || [])
+
     setLoading(false)
   }
 
@@ -111,12 +116,25 @@ export default function Pedidos() {
     if (validItems.length === 0) return
     setSaving(true)
 
+    let customerId = null
+    const nameTrimmed = buyerName.trim()
+    if (nameTrimmed) {
+      const existing = customers.find((c) => c.name.toLowerCase() === nameTrimmed.toLowerCase())
+      if (existing) {
+        customerId = existing.id
+      } else {
+        const { data: newCustomer } = await supabase.from('customers').insert({ name: nameTrimmed }).select().single()
+        customerId = newCustomer?.id || null
+      }
+    }
+
     const { data: sale, error } = await supabase
       .from('sales')
       .insert({
         source: 'manual',
         status: 'paid',
         buyer_name: buyerName,
+        customer_id: customerId,
         total_amount: total,
         net_amount: total,
       })
@@ -173,7 +191,7 @@ export default function Pedidos() {
   async function refreshDetailSale(saleId) {
     const { data } = await supabase
       .from('sales')
-      .select('*, sale_items(*, products(title))')
+      .select('*, sale_items(*, products(title)), customers(name, phone, email)')
       .eq('id', saleId)
       .single()
     if (data) setDetailSale(data)
@@ -372,7 +390,13 @@ export default function Pedidos() {
         >
           <div className="field" style={{ marginBottom: 12 }}>
             <label>Comprador</label>
-            <input className="input" value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
+            <input className="input" list="customers-datalist" placeholder="Nombre del cliente…" value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
+            <datalist id="customers-datalist">
+              {customers.map((c) => <option key={c.id} value={c.name} />)}
+            </datalist>
+            <div style={{ fontSize: 11.5, color: 'var(--text-dim)', marginTop: 2 }}>
+              Si escribís un nombre nuevo se crea el cliente automáticamente.
+            </div>
           </div>
 
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Productos</label>
@@ -446,6 +470,7 @@ export default function Pedidos() {
           onClose={() => setDetailSale(null)}
           actions={
             <>
+              <a className="btn" href={`/comprobante/${detailSale.id}`} target="_blank" rel="noreferrer">🧾 Comprobante</a>
               {detailSale.source === 'mercadolibre' && detailSale.ml_order_id && (
                 <button className="btn" onClick={() => openMessages(detailSale)}>💬 Mensajes</button>
               )}
@@ -467,6 +492,7 @@ export default function Pedidos() {
             <div>
               <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Comprador</div>
               <div>{detailSale.buyer_name || '—'}</div>
+              {detailSale.customers?.phone && <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>{detailSale.customers.phone}</div>}
             </div>
           </div>
 
