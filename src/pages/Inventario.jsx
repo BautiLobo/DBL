@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import Modal from '../components/Modal'
@@ -70,17 +70,11 @@ export default function Inventario() {
   const [reviews, setReviews] = useState(null)
   const [variants, setVariants] = useState([])
   const [removedVariantIds, setRemovedVariantIds] = useState([])
-  const [focusMl, setFocusMl] = useState(false)
-  const mlSectionRef = useRef(null)
+  const [publishModalOpen, setPublishModalOpen] = useState(false)
+  const [publishProductId, setPublishProductId] = useState(null)
 
   const editingProduct = form.id ? products.find((p) => p.id === form.id) : null
-
-  useEffect(() => {
-    if (modalOpen && focusMl && mlSectionRef.current) {
-      mlSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      setFocusMl(false)
-    }
-  }, [modalOpen, focusMl])
+  const publishingProduct = publishProductId ? products.find((p) => p.id === publishProductId) : null
 
   async function loadProducts() {
     setLoading(true)
@@ -167,8 +161,9 @@ export default function Inventario() {
   }
 
   function openPublish(p) {
-    openEdit(p)
-    setFocusMl(true)
+    resetMlUi()
+    setPublishProductId(p.id)
+    setPublishModalOpen(true)
   }
 
   function addVariantRow() {
@@ -199,12 +194,12 @@ export default function Inventario() {
   }
 
   useEffect(() => {
-    if (modalOpen && editingProduct?.ml_item_id) {
-      loadReviews(editingProduct.ml_item_id)
+    if (publishModalOpen && publishingProduct?.ml_item_id) {
+      loadReviews(publishingProduct.ml_item_id)
     } else {
       setReviews(null)
     }
-  }, [modalOpen, editingProduct?.ml_item_id])
+  }, [publishModalOpen, publishingProduct?.ml_item_id])
 
   async function loadCategoryNode(id) {
     setBrowseLoading(true)
@@ -221,11 +216,11 @@ export default function Inventario() {
   }
 
   useEffect(() => {
-    if (modalOpen && editingProduct && !editingProduct.ml_item_id) {
+    if (publishModalOpen && publishingProduct && !publishingProduct.ml_item_id) {
       setBrowseStack([])
       loadCategoryNode(null)
     }
-  }, [modalOpen, editingProduct?.id])
+  }, [publishModalOpen, publishingProduct?.id])
 
   function browseInto(child) {
     setBrowseStack((prev) => [...prev, child])
@@ -267,14 +262,14 @@ export default function Inventario() {
   }
 
   async function publishToMl() {
-    if (!selectedCategory || !form.id) return
+    if (!selectedCategory || !publishProductId) return
     const missing = categoryAttrs.filter((a) => !(attrValues[a.id] || '').trim())
     if (missing.length > 0) {
       setMlError(`Completá los campos obligatorios: ${missing.map((a) => a.name).join(', ')}`)
       return
     }
-    if (editingPhotos.length === 0) {
-      setMlError('Subí al menos una foto en la sección de arriba antes de publicar.')
+    if (publishingPhotos.length === 0) {
+      setMlError('Subí al menos una foto entrando a "Editar" antes de publicar.')
       return
     }
     setMlBusy(true)
@@ -285,7 +280,7 @@ export default function Inventario() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create',
-          product_id: form.id,
+          product_id: publishProductId,
           category_id: selectedCategory.category_id,
           condition,
           listing_type_id: 'gold_special',
@@ -310,7 +305,7 @@ export default function Inventario() {
       const res = await fetch('/api/ml/listings?action=update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update', product_id: form.id, status }),
+        body: JSON.stringify({ action: 'update', product_id: publishProductId, status }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error actualizando la publicación')
@@ -449,6 +444,7 @@ export default function Inventario() {
   }, {})
 
   const editingPhotos = form.id ? (photosByProduct[form.id] || []) : []
+  const publishingPhotos = publishProductId ? (photosByProduct[publishProductId] || []) : []
 
   return (
     <div>
@@ -548,7 +544,9 @@ export default function Inventario() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        {!p.ml_item_id && (
+                        {p.ml_item_id ? (
+                          <button className="btn" onClick={() => openPublish(p)}>Gestionar ML</button>
+                        ) : (
                           <button className="btn btn-primary" onClick={() => openPublish(p)}>Publicar en ML</button>
                         )}
                         <button className="btn" onClick={() => openEdit(p)}>Editar</button>
@@ -679,136 +677,150 @@ export default function Inventario() {
             )}
           </div>
 
-          {form.id && (
-            <div ref={mlSectionRef} style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Mercado Libre</label>
-                {editingProduct?.ml_permalink && (
-                  <a href={editingProduct.ml_permalink} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ fontSize: 12 }}>
-                    Ver publicación ↗
-                  </a>
-                )}
+        </Modal>
+      )}
+
+      {publishModalOpen && publishingProduct && (
+        <Modal
+          title={publishingProduct.ml_item_id ? `Gestionar en Mercado Libre — ${publishingProduct.title}` : `Publicar en Mercado Libre — ${publishingProduct.title}`}
+          onClose={() => setPublishModalOpen(false)}
+          actions={<button className="btn" onClick={() => setPublishModalOpen(false)}>Cerrar</button>}
+        >
+          {publishingProduct.ml_permalink && (
+            <div style={{ marginBottom: 10 }}>
+              <a href={publishingProduct.ml_permalink} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ fontSize: 12 }}>
+                Ver publicación ↗
+              </a>
+            </div>
+          )}
+
+          {mlError && <div className="auth-error" style={{ marginBottom: 10 }}>{mlError}</div>}
+
+          {publishingProduct.ml_item_id ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span className={'badge ' + (ML_STATUS_BADGE[publishingProduct.ml_status] || 'badge-neutral')}>
+                {ML_STATUS_LABEL[publishingProduct.ml_status] || publishingProduct.ml_status}
+              </span>
+              {publishingProduct.ml_status !== 'closed' && (
+                <>
+                  {publishingProduct.ml_status === 'active' ? (
+                    <button type="button" className="btn" disabled={mlBusy} onClick={() => changeMlStatus('paused')}>Pausar</button>
+                  ) : (
+                    <button type="button" className="btn" disabled={mlBusy} onClick={() => changeMlStatus('active')}>Reactivar</button>
+                  )}
+                  <button type="button" className="btn btn-ghost btn-danger" disabled={mlBusy} onClick={() => changeMlStatus('closed')}>
+                    Finalizar
+                  </button>
+                </>
+              )}
+            </div>
+          ) : !selectedCategory ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                Elegí la categoría navegando (el buscador de Mercado Libre está bloqueado para esta cuenta, así que recorremos el árbol de categorías).
               </div>
-
-              {mlError && <div className="auth-error" style={{ marginBottom: 10 }}>{mlError}</div>}
-
-              {editingProduct?.ml_item_id ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span className={'badge ' + (ML_STATUS_BADGE[editingProduct.ml_status] || 'badge-neutral')}>
-                    {ML_STATUS_LABEL[editingProduct.ml_status] || editingProduct.ml_status}
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                <button type="button" className="btn btn-ghost" style={{ padding: '2px 6px' }} onClick={browseHome}>Inicio</button>
+                {browseStack.map((n, i) => (
+                  <span key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ color: 'var(--text-dim)' }}>›</span>
+                    <button type="button" className="btn btn-ghost" style={{ padding: '2px 6px' }} onClick={() => browseBackTo(i)}>{n.name}</button>
                   </span>
-                  {editingProduct.ml_status !== 'closed' && (
-                    <>
-                      {editingProduct.ml_status === 'active' ? (
-                        <button type="button" className="btn" disabled={mlBusy} onClick={() => changeMlStatus('paused')}>Pausar</button>
-                      ) : (
-                        <button type="button" className="btn" disabled={mlBusy} onClick={() => changeMlStatus('active')}>Reactivar</button>
-                      )}
-                      <button type="button" className="btn btn-ghost btn-danger" disabled={mlBusy} onClick={() => changeMlStatus('closed')}>
-                        Finalizar
-                      </button>
-                    </>
+                ))}
+              </div>
+              {browseLoading ? (
+                <div className="empty-state" style={{ padding: 12 }}>Cargando…</div>
+              ) : browseNode ? (
+                <>
+                  <div style={{ fontWeight: 700 }}>{browseNode.name}</div>
+                  {browseNode.listing_allowed && (
+                    <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} disabled={mlBusy} onClick={selectCategory}>
+                      Publicar en "{browseNode.name}"
+                    </button>
                   )}
-                </div>
-              ) : !selectedCategory ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-                    Elegí la categoría navegando (el buscador de Mercado Libre está bloqueado para esta cuenta, así que recorremos el árbol de categorías).
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, fontSize: 12 }}>
-                    <button type="button" className="btn btn-ghost" style={{ padding: '2px 6px' }} onClick={browseHome}>Inicio</button>
-                    {browseStack.map((n, i) => (
-                      <span key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ color: 'var(--text-dim)' }}>›</span>
-                        <button type="button" className="btn btn-ghost" style={{ padding: '2px 6px' }} onClick={() => browseBackTo(i)}>{n.name}</button>
-                      </span>
-                    ))}
-                  </div>
-                  {browseLoading ? (
-                    <div className="empty-state" style={{ padding: 12 }}>Cargando…</div>
-                  ) : browseNode ? (
-                    <>
-                      <div style={{ fontWeight: 700 }}>{browseNode.name}</div>
-                      {browseNode.listing_allowed && (
-                        <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} disabled={mlBusy} onClick={selectCategory}>
-                          Publicar en "{browseNode.name}"
+                  {browseNode.children.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+                      {browseNode.children.map((c) => (
+                        <button
+                          type="button"
+                          key={c.id}
+                          className="btn"
+                          style={{ justifyContent: 'flex-start' }}
+                          onClick={() => browseInto(c)}
+                        >
+                          {c.name} →
                         </button>
-                      )}
-                      {browseNode.children.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
-                          {browseNode.children.map((c) => (
-                            <button
-                              type="button"
-                              key={c.id}
-                              className="btn"
-                              style={{ justifyContent: 'flex-start' }}
-                              onClick={() => browseInto(c)}
-                            >
-                              {c.name} →
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ) : null}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="badge badge-orange">{selectedCategory.category_name}</span>
-                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={clearSelectedCategory}>Cambiar categoría</button>
-                  </div>
-                  {categoryAttrs.map((a) => (
-                    <div className="field" key={a.id}>
-                      <label>{a.name} *</label>
-                      {a.values.length > 0 ? (
-                        <select className="input" value={attrValues[a.id] || ''} onChange={(e) => setAttrValues({ ...attrValues, [a.id]: e.target.value })}>
-                          <option value="">Elegir…</option>
-                          {a.values.map((v) => <option key={v} value={v}>{v}</option>)}
-                        </select>
-                      ) : (
-                        <input className="input" value={attrValues[a.id] || ''} onChange={(e) => setAttrValues({ ...attrValues, [a.id]: e.target.value })} />
-                      )}
+                      ))}
                     </div>
-                  ))}
-                  <div className="field">
-                    <label>Condición</label>
-                    <select className="input" value={condition} onChange={(e) => setCondition(e.target.value)}>
-                      <option value="new">Nuevo</option>
-                      <option value="used">Usado</option>
-                    </select>
-                  </div>
-                  {editingPhotos.length === 0 && (
-                    <div className="auth-error">Subí al menos una foto en la sección de arriba antes de publicar.</div>
                   )}
-                  <button type="button" className="btn btn-primary" disabled={mlBusy || editingPhotos.length === 0} onClick={publishToMl}>
-                    {mlBusy ? 'Publicando…' : 'Publicar en Mercado Libre'}
+                </>
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="badge badge-orange">{selectedCategory.category_name}</span>
+                <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={clearSelectedCategory}>Cambiar categoría</button>
+              </div>
+              {categoryAttrs.map((a) => (
+                <div className="field" key={a.id}>
+                  <label>{a.name} *</label>
+                  {a.values.length > 0 ? (
+                    <select className="input" value={attrValues[a.id] || ''} onChange={(e) => setAttrValues({ ...attrValues, [a.id]: e.target.value })}>
+                      <option value="">Elegir…</option>
+                      {a.values.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  ) : (
+                    <input className="input" value={attrValues[a.id] || ''} onChange={(e) => setAttrValues({ ...attrValues, [a.id]: e.target.value })} />
+                  )}
+                </div>
+              ))}
+              <div className="field">
+                <label>Condición</label>
+                <select className="input" value={condition} onChange={(e) => setCondition(e.target.value)}>
+                  <option value="new">Nuevo</option>
+                  <option value="used">Usado</option>
+                </select>
+              </div>
+              {publishingPhotos.length === 0 && (
+                <div className="auth-error" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span>Subí al menos una foto antes de publicar.</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12 }}
+                    onClick={() => { setPublishModalOpen(false); openEdit(publishingProduct) }}
+                  >
+                    Ir a Editar →
                   </button>
                 </div>
               )}
+              <button type="button" className="btn btn-primary" disabled={mlBusy || publishingPhotos.length === 0} onClick={publishToMl}>
+                {mlBusy ? 'Publicando…' : 'Publicar en Mercado Libre'}
+              </button>
+            </div>
+          )}
 
-              {editingProduct?.ml_item_id && (
-                <div style={{ marginTop: 14 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Reseñas</label>
-                  {reviews === null ? (
-                    <div className="empty-state" style={{ padding: 12 }}>Cargando…</div>
-                  ) : reviews.reviews_total === 0 ? (
-                    <div className="empty-state" style={{ padding: 12 }}>Todavía no tiene reseñas.</div>
-                  ) : (
-                    <div style={{ marginTop: 6 }}>
-                      <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                        ★ {reviews.rating_average.toFixed(1)} ({reviews.reviews_total})
+          {publishingProduct.ml_item_id && (
+            <div style={{ marginTop: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-dim)' }}>Reseñas</label>
+              {reviews === null ? (
+                <div className="empty-state" style={{ padding: 12 }}>Cargando…</div>
+              ) : reviews.reviews_total === 0 ? (
+                <div className="empty-state" style={{ padding: 12 }}>Todavía no tiene reseñas.</div>
+              ) : (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                    ★ {reviews.rating_average.toFixed(1)} ({reviews.reviews_total})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                    {reviews.reviews.map((r) => (
+                      <div key={r.id} style={{ fontSize: 13, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
+                        <div style={{ fontWeight: 600 }}>{'★'.repeat(r.rate)}{'☆'.repeat(5 - r.rate)}</div>
+                        {r.comment && <div style={{ color: 'var(--text-dim)' }}>{r.comment}</div>}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
-                        {reviews.reviews.map((r) => (
-                          <div key={r.id} style={{ fontSize: 13, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                            <div style={{ fontWeight: 600 }}>{'★'.repeat(r.rate)}{'☆'.repeat(5 - r.rate)}</div>
-                            {r.comment && <div style={{ color: 'var(--text-dim)' }}>{r.comment}</div>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
