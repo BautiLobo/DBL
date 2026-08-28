@@ -84,6 +84,7 @@ export default function Inventario() {
   const [categoryAttrs, setCategoryAttrs] = useState([])
   const [attrValues, setAttrValues] = useState({})
   const [condition, setCondition] = useState('new')
+  const [pubDescription, setPubDescription] = useState('')
   const [reviews, setReviews] = useState(null)
   const [variants, setVariants] = useState([])
   const [removedVariantIds, setRemovedVariantIds] = useState([])
@@ -179,6 +180,7 @@ export default function Inventario() {
 
   function openPublish(p) {
     resetMlUi()
+    setPubDescription(p.description || '')
     setPublishProductId(p.id)
     setPublishModalOpen(true)
   }
@@ -292,6 +294,7 @@ export default function Inventario() {
     setMlBusy(true)
     setMlError('')
     try {
+      await supabase.from('products').update({ description: pubDescription }).eq('id', publishProductId)
       const res = await fetch('/api/ml/listings?action=create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -833,6 +836,16 @@ export default function Inventario() {
                   <option value="new">Nuevo</option>
                   <option value="used">Usado</option>
                 </select>
+              </div>
+              <div className="field">
+                <label>Descripción de la publicación</label>
+                <textarea
+                  className="input"
+                  rows={4}
+                  placeholder="Detalle para el comprador: compatibilidad, estado, qué incluye…"
+                  value={pubDescription}
+                  onChange={(e) => setPubDescription(e.target.value)}
+                />
               </div>
               {publishingPhotos.length === 0 && (
                 <div className="auth-error" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
