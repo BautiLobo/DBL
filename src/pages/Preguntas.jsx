@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { formatDate } from '../lib/format'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 export default function Preguntas() {
   const [questions, setQuestions] = useState(null)
   const [error, setError] = useState('')
   const [drafts, setDrafts] = useState({})
   const [sendingId, setSendingId] = useState(null)
+  const [page, setPage] = useState(1)
 
   async function load() {
     setError('')
@@ -42,6 +44,10 @@ export default function Preguntas() {
     setSendingId(null)
   }
 
+  const totalPages = Math.max(1, Math.ceil((questions?.length || 0) / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = (questions || []).slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
   return (
     <div>
       <div className="page-header">
@@ -61,7 +67,7 @@ export default function Preguntas() {
           <div className="empty-state">No tenés preguntas pendientes. 👍</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {questions.map((q) => (
+            {paged.map((q) => (
               <div key={q.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
                   <div style={{ fontWeight: 600 }}>{q.product_title || `Publicación ${q.item_id}`}</div>
@@ -85,6 +91,7 @@ export default function Preguntas() {
           </div>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={questions?.length || 0} />
     </div>
   )
 }

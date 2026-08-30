@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney, formatDate } from '../lib/format'
 import Modal from '../components/Modal'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 const EMPTY_FORM = { id: null, name: '', phone: '', email: '', address: '', notes: '' }
 
@@ -10,6 +11,7 @@ export default function Clientes() {
   const [salesByCustomer, setSalesByCustomer] = useState({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -80,6 +82,9 @@ export default function Clientes() {
     const q = search.toLowerCase()
     return !q || c.name.toLowerCase().includes(q) || (c.phone || '').includes(q) || (c.email || '').toLowerCase().includes(q)
   })
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   return (
     <div>
@@ -120,7 +125,7 @@ export default function Clientes() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => {
+              {paged.map((c) => {
                 const wa = whatsappLink(c.phone)
                 const stats = salesByCustomer[c.id]
                 return (
@@ -152,6 +157,7 @@ export default function Clientes() {
           </table>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} />
 
       {modalOpen && (
         <Modal

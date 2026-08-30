@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney, formatDate } from '../lib/format'
 import Modal from '../components/Modal'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 const CATEGORIES = ['ventas', 'costo de mercadería', 'compra de stock', 'insumos de envío', 'monotributo', 'comision ml', 'envio', 'impuestos', 'servicios', 'otros']
 
@@ -9,6 +10,7 @@ export default function Contabilidad() {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState('all')
+  const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ type: 'income', category: 'ventas', amount: '', description: '', entry_date: new Date().toISOString().slice(0, 10) })
@@ -23,6 +25,9 @@ export default function Contabilidad() {
   useEffect(() => { loadEntries() }, [])
 
   const filtered = entries.filter((e) => typeFilter === 'all' || e.type === typeFilter)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const totals = useMemo(() => {
     const income = entries.filter((e) => e.type === 'income').reduce((s, e) => s + Number(e.amount), 0)
@@ -113,7 +118,7 @@ export default function Contabilidad() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e) => (
+              {paged.map((e) => (
                 <tr key={e.id}>
                   <td>{formatDate(e.entry_date)}</td>
                   <td><span className={'badge ' + (e.type === 'income' ? 'badge-green' : 'badge-danger')}>{e.type === 'income' ? 'Ingreso' : 'Egreso'}</span></td>
@@ -132,6 +137,7 @@ export default function Contabilidad() {
           </table>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} />
 
       {modalOpen && (
         <Modal

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import Modal from '../components/Modal'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 const EMPTY_FORM = { id: null, name: '', category: '', contact_name: '', phone: '', email: '', address: '', notes: '' }
 
@@ -8,6 +9,7 @@ export default function Proveedores() {
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -81,6 +83,9 @@ export default function Proveedores() {
     const q = search.toLowerCase()
     return !q || s.name.toLowerCase().includes(q) || (s.category || '').toLowerCase().includes(q) || (s.contact_name || '').toLowerCase().includes(q)
   })
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   return (
     <div>
@@ -120,7 +125,7 @@ export default function Proveedores() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => {
+              {paged.map((s) => {
                 const wa = whatsappLink(s.phone)
                 return (
                   <tr key={s.id}>
@@ -150,6 +155,7 @@ export default function Proveedores() {
           </table>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} />
 
       {modalOpen && (
         <Modal

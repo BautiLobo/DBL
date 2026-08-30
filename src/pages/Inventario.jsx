@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import Modal from '../components/Modal'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 const CATEGORIES = [
   'Motor',
@@ -69,6 +70,9 @@ export default function Inventario() {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [pendingDeltas, setPendingDeltas] = useState({})
+  const [savingStock, setSavingStock] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -158,7 +162,7 @@ export default function Inventario() {
       brand_compat: p.brand_compat || '',
       cost_price: p.cost_price ?? '',
       sale_price: p.sale_price ?? '',
-      stock_qty: p.stock_qty ?? '',
+      stock_qty: effectiveQty(p) ?? '',
       min_stock_alert: p.min_stock_alert ?? '2',
       ml_item_id: p.ml_item_id || '',
     })
@@ -388,6 +392,13 @@ export default function Inventario() {
 
     if (productId) await syncVariants(productId)
 
+    if (form.id) {
+      setPendingDeltas((prev) => {
+        const { [form.id]: _omit, ...rest } = prev
+        return rest
+      })
+    }
+
     setSaving(false)
     setModalOpen(false)
     loadProducts()
@@ -421,26 +432,59 @@ export default function Inventario() {
   async function handleDelete(p) {
     if (!confirm(`¿Eliminar "${p.title}"? Esta acción no se puede deshacer.`)) return
     await supabase.from('products').update({ active: false }).eq('id', p.id)
+    setPendingDeltas((prev) => {
+      const { [p.id]: _omit, ...rest } = prev
+      return rest
+    })
     loadProducts()
   }
 
-  async function adjustStock(p, delta) {
-    const newQty = Math.max(0, p.stock_qty + delta)
-    await supabase.from('products').update({ stock_qty: newQty }).eq('id', p.id)
-    await supabase.from('stock_movements').insert({
-      product_id: p.id,
-      type: delta > 0 ? 'in' : 'out',
-      qty: Math.abs(delta),
-      reason: 'Ajuste manual',
+  function effectiveQty(p) {
+    return p.stock_qty + (pendingDeltas[p.id] || 0)
+  }
+
+  function bumpStock(p, delta) {
+    setPendingDeltas((prev) => {
+      const next = (prev[p.id] || 0) + delta
+      if (p.stock_qty + next < 0) return prev
+      if (next === 0) {
+        const { [p.id]: _omit, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [p.id]: next }
     })
-    if (delta > 0 && p.cost_price > 0) {
-      await supabase.from('accounting_entries').insert({
-        type: 'expense',
-        category: 'compra de stock',
-        amount: p.cost_price * delta,
-        description: `Compra de stock: ${p.title} x${delta}`,
+  }
+
+  function discardStockChanges() {
+    setPendingDeltas({})
+  }
+
+  async function saveStockChanges() {
+    const changes = Object.entries(pendingDeltas).filter(([, delta]) => delta !== 0)
+    if (changes.length === 0) return
+    setSavingStock(true)
+    await Promise.all(changes.map(async ([id, delta]) => {
+      const p = products.find((pp) => String(pp.id) === id)
+      if (!p) return
+      const newQty = Math.max(0, p.stock_qty + delta)
+      await supabase.from('products').update({ stock_qty: newQty }).eq('id', p.id)
+      await supabase.from('stock_movements').insert({
+        product_id: p.id,
+        type: delta > 0 ? 'in' : 'out',
+        qty: Math.abs(delta),
+        reason: 'Ajuste manual',
       })
-    }
+      if (delta > 0 && p.cost_price > 0) {
+        await supabase.from('accounting_entries').insert({
+          type: 'expense',
+          category: 'compra de stock',
+          amount: p.cost_price * delta,
+          description: `Compra de stock: ${p.title} x${delta}`,
+        })
+      }
+    }))
+    setPendingDeltas({})
+    setSavingStock(false)
     loadProducts()
   }
 
@@ -498,6 +542,11 @@ export default function Inventario() {
     return acc
   }, {})
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  const pendingCount = Object.keys(pendingDeltas).length
+
   const editingPhotos = form.id ? (photosByProduct[form.id] || []) : []
   const publishingPhotos = publishProductId ? (photosByProduct[publishProductId] || []) : []
 
@@ -510,6 +559,20 @@ export default function Inventario() {
         </div>
         <button className="btn btn-primary" onClick={openNew}>+ Nuevo producto</button>
       </div>
+
+      {pendingCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent-soft)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>
+            {pendingCount} {pendingCount === 1 ? 'producto con cambio de stock sin guardar' : 'productos con cambios de stock sin guardar'}
+          </span>
+          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+            <button type="button" className="btn btn-ghost" disabled={savingStock} onClick={discardStockChanges}>Descartar</button>
+            <button type="button" className="btn btn-primary" disabled={savingStock} onClick={saveStockChanges}>
+              {savingStock ? 'Guardando…' : 'Guardar cambios'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="toolbar">
         <input
@@ -555,9 +618,10 @@ export default function Inventario() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => {
+              {paged.map((p) => {
                 const photos = photosByProduct[p.id] || []
-                const low = p.stock_qty <= p.min_stock_alert
+                const qty = effectiveQty(p)
+                const low = qty <= p.min_stock_alert
                 return (
                   <tr key={p.id}>
                     <td>
@@ -582,9 +646,9 @@ export default function Inventario() {
                     <td>{formatMoney(p.sale_price)}</td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => adjustStock(p, -1)}>−</button>
-                        <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 700 }}>{p.stock_qty}</span>
-                        <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => adjustStock(p, 1)}>+</button>
+                        <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => bumpStock(p, -1)}>−</button>
+                        <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 700, color: pendingDeltas[p.id] ? 'var(--accent)' : undefined }}>{qty}</span>
+                        <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => bumpStock(p, 1)}>+</button>
                         {low && <span className="badge badge-danger">Bajo</span>}
                       </div>
                     </td>
@@ -615,6 +679,7 @@ export default function Inventario() {
           </table>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} />
 
       {modalOpen && (
         <Modal

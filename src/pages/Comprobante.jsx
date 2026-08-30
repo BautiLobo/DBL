@@ -1,12 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { formatMoney, formatDate } from '../lib/format'
+import { formatMoney, formatDate, formatInvoiceNumber } from '../lib/format'
+
+const FISCAL_KEYS = [
+  'business_name',
+  'fiscal_cuit',
+  'fiscal_razon_social',
+  'fiscal_domicilio',
+  'fiscal_condicion_iva',
+  'fiscal_punto_venta',
+  'fiscal_iibb',
+  'fiscal_inicio_actividades',
+]
 
 export default function Comprobante() {
   const { saleId } = useParams()
   const [sale, setSale] = useState(null)
-  const [businessName, setBusinessName] = useState('DBL Repuestos')
+  const [fiscal, setFiscal] = useState({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -18,8 +29,10 @@ export default function Comprobante() {
         .single()
       setSale(data)
 
-      const { data: settingsRows } = await supabase.from('settings').select('*').eq('key', 'business_name')
-      if (settingsRows?.[0]?.value) setBusinessName(settingsRows[0].value)
+      const { data: settingsRows } = await supabase.from('settings').select('*').in('key', FISCAL_KEYS)
+      const map = {}
+      for (const row of settingsRows || []) map[row.key] = row.value
+      setFiscal(map)
 
       setLoading(false)
     }
@@ -30,9 +43,12 @@ export default function Comprobante() {
   if (!sale) return <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>Pedido no encontrado.</div>
 
   const items = sale.sale_items || []
+  const businessName = fiscal.business_name || 'DBL Repuestos'
+  const razonSocial = fiscal.fiscal_razon_social || businessName
+  const hasCae = false // no hay integración con AFIP/ARCA todavía: esto no reemplaza una factura electrónica con CAE
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: 32, fontFamily: 'system-ui, sans-serif', color: '#1a1a1a' }}>
+    <div style={{ maxWidth: 680, margin: '0 auto', padding: 32, fontFamily: 'system-ui, sans-serif', color: '#1a1a1a' }}>
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -45,18 +61,32 @@ export default function Comprobante() {
           onClick={() => window.print()}
           style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc', background: '#f5f5f5', cursor: 'pointer', fontWeight: 600 }}
         >
-          Imprimir / Guardar PDF
+          Imprimir / Descargar PDF
         </button>
       </div>
 
-      <div style={{ borderBottom: '2px solid #1a1a1a', paddingBottom: 16, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>{businessName}</div>
-          <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>Comprobante de venta</div>
+      <div style={{ border: '1px solid #1a1a1a', borderRadius: 4, padding: 16, marginBottom: 20, display: 'flex', gap: 16, alignItems: 'stretch' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 20, fontWeight: 800 }}>{razonSocial}</div>
+          {businessName !== razonSocial && <div style={{ fontSize: 13, color: '#555' }}>{businessName}</div>}
+          {fiscal.fiscal_domicilio && <div style={{ fontSize: 12.5, marginTop: 4 }}>{fiscal.fiscal_domicilio}</div>}
+          <div style={{ fontSize: 12.5, marginTop: 6 }}>
+            {fiscal.fiscal_cuit && <div>CUIT: {fiscal.fiscal_cuit}</div>}
+            <div>Condición frente al IVA: {fiscal.fiscal_condicion_iva || 'Monotributista'}</div>
+            {fiscal.fiscal_iibb && <div>Ingresos Brutos: {fiscal.fiscal_iibb}</div>}
+            {fiscal.fiscal_inicio_actividades && <div>Inicio de actividades: {fiscal.fiscal_inicio_actividades}</div>}
+          </div>
         </div>
-        <div style={{ textAlign: 'right', fontSize: 13 }}>
-          <div>N.º {String(sale.id).padStart(6, '0')}</div>
-          <div>{formatDate(sale.sale_date || sale.created_at)}</div>
+        <div style={{ width: 1, background: '#1a1a1a' }} />
+        <div style={{ width: 190, textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 32, fontWeight: 900, border: '2px solid #1a1a1a', borderRadius: 6, width: 48, margin: '0 auto', lineHeight: '46px' }}>C</div>
+            <div style={{ fontSize: 10, marginTop: 2 }}>FACTURA</div>
+          </div>
+          <div style={{ fontSize: 12.5, marginTop: 10 }}>
+            <div>N.º {formatInvoiceNumber(fiscal.fiscal_punto_venta, sale.invoice_number)}</div>
+            <div>{formatDate(sale.sale_date || sale.created_at)}</div>
+          </div>
         </div>
       </div>
 
@@ -98,9 +128,12 @@ export default function Comprobante() {
         </div>
       </div>
 
-      <div style={{ fontSize: 11, color: '#888', borderTop: '1px solid #e5e5e5', paddingTop: 12 }}>
-        Este comprobante es un recibo interno y no reemplaza a una factura fiscal emitida por AFIP/ARCA.
-      </div>
+      {!hasCae && (
+        <div style={{ fontSize: 11, color: '#888', borderTop: '1px solid #e5e5e5', paddingTop: 12 }}>
+          Documento no válido como factura electrónica ante AFIP/ARCA (no posee CAE) — es un comprobante interno para
+          adjuntar al envío. Se emitirá con CAE una vez conectada la facturación electrónica del monotributo.
+        </div>
+      )}
     </div>
   )
 }

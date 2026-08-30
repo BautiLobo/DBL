@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import Modal from '../components/Modal'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 const EMPTY_FORM = { id: null, name: '', unit: 'unidad', stock_qty: '0', min_stock_alert: '5', cost_price: '', notes: '', photo_url: '' }
 
@@ -9,6 +10,9 @@ export default function MaterialesEnvio() {
   const [supplies, setSupplies] = useState([])
   const [loading, setLoading] = useState(true)
   const [onlyLow, setOnlyLow] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pendingDeltas, setPendingDeltas] = useState({})
+  const [savingStock, setSavingStock] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -36,7 +40,7 @@ export default function MaterialesEnvio() {
       id: s.id,
       name: s.name,
       unit: s.unit || 'unidad',
-      stock_qty: String(s.stock_qty ?? 0),
+      stock_qty: String(effectiveQty(s) ?? 0),
       min_stock_alert: String(s.min_stock_alert ?? 5),
       cost_price: s.cost_price ?? '',
       notes: s.notes || '',
@@ -80,6 +84,12 @@ export default function MaterialesEnvio() {
         })
       }
     }
+    if (form.id) {
+      setPendingDeltas((prev) => {
+        const { [form.id]: _omit, ...rest } = prev
+        return rest
+      })
+    }
     setSaving(false)
     setModalOpen(false)
     loadSupplies()
@@ -88,32 +98,69 @@ export default function MaterialesEnvio() {
   async function handleDelete(s) {
     if (!confirm(`¿Eliminar "${s.name}"?`)) return
     await supabase.from('shipping_supplies').update({ active: false }).eq('id', s.id)
+    setPendingDeltas((prev) => {
+      const { [s.id]: _omit, ...rest } = prev
+      return rest
+    })
     loadSupplies()
   }
 
-  async function adjustStock(s, delta) {
-    const newQty = Math.max(0, s.stock_qty + delta)
-    await supabase.from('shipping_supplies').update({ stock_qty: newQty }).eq('id', s.id)
-    await supabase.from('shipping_supply_movements').insert({
-      supply_id: s.id,
-      type: delta > 0 ? 'in' : 'out',
-      qty: Math.abs(delta),
-      reason: delta > 0 ? 'Compra / reposición' : 'Uso en embalaje',
+  function effectiveQty(s) {
+    return s.stock_qty + (pendingDeltas[s.id] || 0)
+  }
+
+  function bumpStock(s, delta) {
+    setPendingDeltas((prev) => {
+      const next = (prev[s.id] || 0) + delta
+      if (s.stock_qty + next < 0) return prev
+      if (next === 0) {
+        const { [s.id]: _omit, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [s.id]: next }
     })
-    if (delta > 0 && s.cost_price > 0) {
-      await supabase.from('accounting_entries').insert({
-        type: 'expense',
-        category: 'insumos de envío',
-        amount: s.cost_price * delta,
-        description: `Compra insumo de envío: ${s.name} x${delta}`,
+  }
+
+  function discardStockChanges() {
+    setPendingDeltas({})
+  }
+
+  async function saveStockChanges() {
+    const changes = Object.entries(pendingDeltas).filter(([, delta]) => delta !== 0)
+    if (changes.length === 0) return
+    setSavingStock(true)
+    await Promise.all(changes.map(async ([id, delta]) => {
+      const s = supplies.find((ss) => String(ss.id) === id)
+      if (!s) return
+      const newQty = Math.max(0, s.stock_qty + delta)
+      await supabase.from('shipping_supplies').update({ stock_qty: newQty }).eq('id', s.id)
+      await supabase.from('shipping_supply_movements').insert({
+        supply_id: s.id,
+        type: delta > 0 ? 'in' : 'out',
+        qty: Math.abs(delta),
+        reason: delta > 0 ? 'Compra / reposición' : 'Uso en embalaje',
       })
-    }
+      if (delta > 0 && s.cost_price > 0) {
+        await supabase.from('accounting_entries').insert({
+          type: 'expense',
+          category: 'insumos de envío',
+          amount: s.cost_price * delta,
+          description: `Compra insumo de envío: ${s.name} x${delta}`,
+        })
+      }
+    }))
+    setPendingDeltas({})
+    setSavingStock(false)
     loadSupplies()
   }
 
   const lowStock = supplies.filter((s) => s.stock_qty <= s.min_stock_alert)
   const filtered = onlyLow ? lowStock : supplies
   const toBuyCost = lowStock.reduce((sum, s) => sum + Math.max(0, s.min_stock_alert - s.stock_qty) * Number(s.cost_price || 0), 0)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  const pendingCount = Object.keys(pendingDeltas).length
 
   return (
     <div>
@@ -124,6 +171,20 @@ export default function MaterialesEnvio() {
         </div>
         <button className="btn btn-primary" onClick={openNew}>+ Nuevo insumo</button>
       </div>
+
+      {pendingCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent-soft)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>
+            {pendingCount} {pendingCount === 1 ? 'insumo con cambio de stock sin guardar' : 'insumos con cambios de stock sin guardar'}
+          </span>
+          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+            <button type="button" className="btn btn-ghost" disabled={savingStock} onClick={discardStockChanges}>Descartar</button>
+            <button type="button" className="btn btn-primary" disabled={savingStock} onClick={saveStockChanges}>
+              {savingStock ? 'Guardando…' : 'Guardar cambios'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="stat-grid">
         <div className="stat-card">
@@ -170,8 +231,9 @@ export default function MaterialesEnvio() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => {
-                const low = s.stock_qty <= s.min_stock_alert
+              {paged.map((s) => {
+                const qty = effectiveQty(s)
+                const low = qty <= s.min_stock_alert
                 return (
                   <tr key={s.id}>
                     <td>
@@ -184,9 +246,9 @@ export default function MaterialesEnvio() {
                     <td style={{ fontWeight: 600 }}>{s.name}</td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => adjustStock(s, -1)}>−</button>
-                        <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 700 }}>{s.stock_qty}</span>
-                        <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => adjustStock(s, 1)}>+</button>
+                        <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => bumpStock(s, -1)}>−</button>
+                        <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 700, color: pendingDeltas[s.id] ? 'var(--accent)' : undefined }}>{qty}</span>
+                        <button className="btn btn-ghost" style={{ padding: '2px 8px' }} onClick={() => bumpStock(s, 1)}>+</button>
                         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{s.unit}</span>
                         {low && <span className="badge badge-danger">Comprar</span>}
                       </div>
@@ -207,6 +269,7 @@ export default function MaterialesEnvio() {
           </table>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} />
 
       {modalOpen && (
         <Modal

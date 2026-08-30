@@ -70,8 +70,15 @@ CREATE TABLE sales (
   shipping_status TEXT,
   tracking_number TEXT,
   ml_buyer_id     TEXT,
+  invoice_number  BIGINT NOT NULL DEFAULT nextval('sales_invoice_number_seq'),
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- NOTA: la tabla también tiene customer_id (FK a customers), agregada en una
+-- migración posterior a este archivo — ver el proyecto de Supabase para el
+-- esquema real y completo (customers, purchase_orders, suppliers, etc.)
+CREATE SEQUENCE IF NOT EXISTS sales_invoice_number_seq START 1;
+CREATE UNIQUE INDEX IF NOT EXISTS sales_invoice_number_key ON sales(invoice_number);
 
 ALTER TABLE stock_movements
   ADD CONSTRAINT stock_movements_sale_fk
@@ -128,6 +135,17 @@ CREATE TABLE settings (
 INSERT INTO settings (key, value) VALUES
   ('business_name', 'DBL Repuestos'),
   ('default_min_stock_alert', '2');
+
+-- Datos fiscales del monotributo, usados para armar la factura de cada venta
+INSERT INTO settings (key, value) VALUES
+  ('fiscal_cuit', ''),
+  ('fiscal_razon_social', ''),
+  ('fiscal_domicilio', ''),
+  ('fiscal_condicion_iva', 'Monotributista'),
+  ('fiscal_punto_venta', '0001'),
+  ('fiscal_iibb', ''),
+  ('fiscal_inicio_actividades', '')
+ON CONFLICT (key) DO NOTHING;
 
 -- ============================================================
 --  STORAGE — bucket para fotos de productos

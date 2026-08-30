@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney, formatDate } from '../lib/format'
 import Modal from '../components/Modal'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 const STATUS_LABEL = { pending: 'Pendiente', received: 'Recibida', cancelled: 'Cancelada' }
 const STATUS_BADGE = { pending: 'badge-warning', received: 'badge-green', cancelled: 'badge-danger' }
@@ -14,6 +15,7 @@ export default function OrdenesCompra() {
   const [products, setProducts] = useState([])
   const [supplies, setSupplies] = useState([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -191,6 +193,10 @@ export default function OrdenesCompra() {
     return (order.purchase_order_items || []).reduce((sum, it) => sum + it.qty * it.unit_cost, 0)
   }
 
+  const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = orders.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
   return (
     <div>
       <div className="page-header">
@@ -219,7 +225,7 @@ export default function OrdenesCompra() {
               </tr>
             </thead>
             <tbody>
-              {orders.map((o) => (
+              {paged.map((o) => (
                 <tr key={o.id}>
                   <td>{formatDate(o.order_date)}</td>
                   <td>{o.suppliers?.name || '—'}</td>
@@ -235,6 +241,7 @@ export default function OrdenesCompra() {
           </table>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={orders.length} />
 
       {modalOpen && (
         <Modal

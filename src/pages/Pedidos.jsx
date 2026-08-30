@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { formatMoney, formatDate } from '../lib/format'
+import { formatMoney, formatDate, formatInvoiceNumber } from '../lib/format'
 import Modal from '../components/Modal'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 const STATUS_LABEL = {
   pending: 'Pendiente',
@@ -41,10 +42,12 @@ const EMPTY_ITEM = { product_id: '', qty: 1, unit_price: 0 }
 
 export default function Pedidos() {
   const [sales, setSales] = useState([])
+  const [puntoVenta, setPuntoVenta] = useState('0001')
   const [products, setProducts] = useState([])
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
+  const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [buyerName, setBuyerName] = useState('')
@@ -76,6 +79,9 @@ export default function Pedidos() {
 
     const { data: custs } = await supabase.from('customers').select('id, name, phone, email').eq('active', true).order('name')
     setCustomers(custs || [])
+
+    const { data: pvRows } = await supabase.from('settings').select('value').eq('key', 'fiscal_punto_venta')
+    if (pvRows?.[0]?.value) setPuntoVenta(pvRows[0].value)
 
     setLoading(false)
   }
@@ -279,6 +285,9 @@ export default function Pedidos() {
   }
 
   const filtered = sales.filter((s) => filter === 'all' || s.source === filter)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   return (
     <div>
@@ -321,7 +330,7 @@ export default function Pedidos() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => (
+              {paged.map((s) => (
                 <tr key={s.id}>
                   <td>{formatDate(s.sale_date || s.created_at)}</td>
                   <td>
@@ -374,6 +383,7 @@ export default function Pedidos() {
           </table>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} />
 
       {modalOpen && (
         <Modal
@@ -466,11 +476,11 @@ export default function Pedidos() {
 
       {detailSale && (
         <Modal
-          title={`Pedido ${detailSale.ml_order_id ? '#' + detailSale.ml_order_id : '#' + detailSale.id}`}
+          title={`Pedido ${detailSale.ml_order_id ? '#' + detailSale.ml_order_id : '#' + detailSale.id} — Factura ${formatInvoiceNumber(puntoVenta, detailSale.invoice_number)}`}
           onClose={() => setDetailSale(null)}
           actions={
             <>
-              <a className="btn" href={`/comprobante/${detailSale.id}`} target="_blank" rel="noreferrer">🧾 Comprobante</a>
+              <a className="btn" href={`/comprobante/${detailSale.id}`} target="_blank" rel="noreferrer">🧾 Factura</a>
               {detailSale.source === 'mercadolibre' && detailSale.ml_order_id && (
                 <button className="btn" onClick={() => openMessages(detailSale)}>💬 Mensajes</button>
               )}

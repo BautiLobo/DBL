@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatDate } from '../lib/format'
+import Pagination, { PAGE_SIZE } from '../components/Pagination'
 
 const STATUS_LABEL = { opened: 'Abierto', in_mediation: 'En mediación', closed: 'Cerrado', cancelled: 'Cancelado' }
 const STATUS_BADGE = { opened: 'badge-warning', in_mediation: 'badge-danger', closed: 'badge-neutral', cancelled: 'badge-neutral' }
@@ -7,6 +8,7 @@ const STATUS_BADGE = { opened: 'badge-warning', in_mediation: 'badge-danger', cl
 export default function Reclamos() {
   const [claims, setClaims] = useState(null)
   const [error, setError] = useState('')
+  const [page, setPage] = useState(1)
 
   async function load() {
     setError('')
@@ -22,6 +24,10 @@ export default function Reclamos() {
   }
 
   useEffect(() => { load() }, [])
+
+  const totalPages = Math.max(1, Math.ceil((claims?.length || 0) / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = (claims || []).slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   return (
     <div>
@@ -61,7 +67,7 @@ export default function Reclamos() {
               </tr>
             </thead>
             <tbody>
-              {claims.map((c) => (
+              {paged.map((c) => (
                 <tr key={c.id}>
                   <td>{formatDate(c.date)}</td>
                   <td>{c.type || '—'}</td>
@@ -88,6 +94,7 @@ export default function Reclamos() {
           </table>
         )}
       </div>
+      <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={claims?.length || 0} />
     </div>
   )
 }
