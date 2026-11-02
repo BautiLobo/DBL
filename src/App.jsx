@@ -16,6 +16,8 @@ import Monotributo from './pages/Monotributo'
 import Estadisticas from './pages/Estadisticas'
 import Configuracion from './pages/Configuracion'
 import Comprobante from './pages/Comprobante'
+import VentasFisicas from './pages/VentasFisicas'
+import CargaCompra from './pages/CargaCompra'
 
 function RequireAuth({ children }) {
   const { session, loading } = useAuth()
@@ -40,6 +42,8 @@ function Routed() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/inventario" element={<Inventario />} />
+        <Route path="/ventas-fisicas" element={<VentasFisicas />} />
+        <Route path="/carga-compra" element={<CargaCompra />} />
         <Route path="/materiales-envio" element={<MaterialesEnvio />} />
         <Route path="/proveedores" element={<Proveedores />} />
         <Route path="/ordenes-compra" element={<OrdenesCompra />} />

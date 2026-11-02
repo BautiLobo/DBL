@@ -3,6 +3,19 @@ import { supabase } from '../lib/supabase'
 import { formatMoney, formatDate } from '../lib/format'
 import Modal from '../components/Modal'
 import Pagination, { PAGE_SIZE } from '../components/Pagination'
+import { localToday } from '../lib/stock'
+
+function shiftMonth(ym, delta) {
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthLabel(ym) {
+  const [y, m] = ym.split('-').map(Number)
+  const label = new Date(y, m - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
 
 const CATEGORIES = ['ventas', 'costo de mercadería', 'compra de stock', 'insumos de envío', 'monotributo', 'comision ml', 'envio', 'impuestos', 'servicios', 'otros']
 
@@ -10,6 +23,7 @@ export default function Contabilidad() {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState('all')
+  const [month, setMonth] = useState(localToday().slice(0, 7)) // 'YYYY-MM' o 'all'
   const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -17,12 +31,18 @@ export default function Contabilidad() {
 
   async function loadEntries() {
     setLoading(true)
-    const { data } = await supabase.from('accounting_entries').select('*').order('entry_date', { ascending: false }).limit(300)
+    let q = supabase.from('accounting_entries').select('*').order('entry_date', { ascending: false }).order('id', { ascending: false })
+    if (month !== 'all') {
+      q = q.gte('entry_date', `${month}-01`).lt('entry_date', `${shiftMonth(month, 1)}-01`)
+    } else {
+      q = q.limit(1000)
+    }
+    const { data } = await q
     setEntries(data || [])
     setLoading(false)
   }
 
-  useEffect(() => { loadEntries() }, [])
+  useEffect(() => { loadEntries(); setPage(1) }, [month]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = entries.filter((e) => typeFilter === 'all' || e.type === typeFilter)
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
@@ -38,7 +58,7 @@ export default function Contabilidad() {
   }, [entries])
 
   function openNew() {
-    setForm({ type: 'income', category: 'ventas', amount: '', description: '', entry_date: new Date().toISOString().slice(0, 10) })
+    setForm({ type: 'income', category: 'ventas', amount: '', description: '', entry_date: localToday() })
     setModalOpen(true)
   }
 
@@ -68,9 +88,23 @@ export default function Contabilidad() {
       <div className="page-header">
         <div>
           <h1>Contabilidad</h1>
-          <p>Ingresos y egresos del negocio</p>
+          <p>Ingresos y egresos del negocio — {month === 'all' ? 'todos los meses' : monthLabel(month)}</p>
         </div>
         <button className="btn btn-primary" onClick={openNew}>+ Movimiento</button>
+      </div>
+
+      <div className="toolbar" style={{ alignItems: 'center' }}>
+        <button type="button" className="btn" disabled={month === 'all'} onClick={() => setMonth(shiftMonth(month, -1))}>‹</button>
+        <input
+          className="input"
+          type="month"
+          style={{ maxWidth: 180 }}
+          value={month === 'all' ? '' : month}
+          onChange={(e) => setMonth(e.target.value || 'all')}
+        />
+        <button type="button" className="btn" disabled={month === 'all'} onClick={() => setMonth(shiftMonth(month, 1))}>›</button>
+        <button type="button" className="btn btn-ghost" onClick={() => setMonth(localToday().slice(0, 7))}>Mes actual</button>
+        <button type="button" className={'btn ' + (month === 'all' ? 'btn-primary' : 'btn-ghost')} onClick={() => setMonth('all')}>Todos</button>
       </div>
 
       <div className="stat-grid">
@@ -93,7 +127,7 @@ export default function Contabilidad() {
       </div>
 
       <div className="toolbar">
-        <select className="input" style={{ maxWidth: 180 }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <select className="input" style={{ maxWidth: 180 }} value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}>
           <option value="all">Todos</option>
           <option value="income">Ingresos</option>
           <option value="expense">Egresos</option>
@@ -104,7 +138,7 @@ export default function Contabilidad() {
         {loading ? (
           <div className="empty-state">Cargando…</div>
         ) : filtered.length === 0 ? (
-          <div className="empty-state">No hay movimientos cargados.</div>
+          <div className="empty-state">No hay movimientos {month === 'all' ? 'cargados' : 'en ' + monthLabel(month)}.</div>
         ) : (
           <table className="table">
             <thead>

@@ -6,6 +6,8 @@ import Logo from './Logo'
 const NAV = [
   { to: '/', label: 'Panel', icon: '🏠', end: true },
   { to: '/inventario', label: 'Inventario', icon: '📦' },
+  { to: '/ventas-fisicas', label: 'Ventas del día', icon: '🏪' },
+  { to: '/carga-compra', label: 'Carga de compra', icon: '📥' },
   { to: '/materiales-envio', label: 'Materiales de envío', icon: '📮' },
   { to: '/proveedores', label: 'Proveedores', icon: '🤝' },
   { to: '/ordenes-compra', label: 'Órdenes de compra', icon: '📋' },
