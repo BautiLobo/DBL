@@ -24,6 +24,10 @@ CREATE TABLE products (
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Código de barras (EAN de fábrica, etc.) para escanear con la cámara del celular
+ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS products_barcode_key ON products(barcode) WHERE barcode IS NOT NULL AND barcode <> '';
+
 CREATE TABLE product_photos (
   id           BIGSERIAL PRIMARY KEY,
   product_id   BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,

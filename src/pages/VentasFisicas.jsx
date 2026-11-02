@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import { localToday, syncMlStock } from '../lib/stock'
 import Pagination, { PAGE_SIZE } from '../components/Pagination'
+import BarcodeScanner from '../components/BarcodeScanner'
+import AssignBarcode from '../components/AssignBarcode'
 
 const PHYSICAL_NOTE = 'Venta física'
 
@@ -16,12 +18,14 @@ export default function VentasFisicas() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [todaySales, setTodaySales] = useState([])
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [assignCode, setAssignCode] = useState(null)
 
   async function loadData() {
     setLoading(true)
     const { data: prods } = await supabase
       .from('products')
-      .select('id, title, sku, category, sale_price, cost_price, stock_qty, ml_item_id')
+      .select('id, title, sku, barcode, category, sale_price, cost_price, stock_qty, ml_item_id')
       .eq('active', true)
       .order('title')
     setProducts(prods || [])
@@ -63,6 +67,28 @@ export default function VentasFisicas() {
     })
   }
 
+  function addScanned(p) {
+    const current = qtys[p.id] || 0
+    if (current >= p.stock_qty) return { text: `✗ ${p.title}: no hay más stock (${p.stock_qty})`, ok: false }
+    bump(p, 1)
+    return { text: `✓ ${p.title} — ${current + 1} vendido(s)`, ok: true }
+  }
+
+  function handleScan(code) {
+    const p = products.find((x) => x.barcode === code) || products.find((x) => x.sku && x.sku === code)
+    if (p) return addScanned(p)
+    setScannerOpen(false)
+    setAssignCode(code)
+    return null
+  }
+
+  function handleAssigned(p) {
+    setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, barcode: p.barcode } : x)))
+    setAssignCode(null)
+    if (p.stock_qty > 0) bump(p, 1)
+    setScannerOpen(true)
+  }
+
   function unitPrice(p) {
     return prices[p.id] !== undefined ? Number(prices[p.id]) || 0 : Number(p.sale_price) || 0
   }
@@ -73,7 +99,7 @@ export default function VentasFisicas() {
 
   const filtered = products.filter((p) => {
     const q = search.toLowerCase()
-    return !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q)
+    return !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.barcode || '').includes(q) || (p.category || '').toLowerCase().includes(q)
   })
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -179,6 +205,7 @@ export default function VentasFisicas() {
           <h1>Ventas del día</h1>
           <p>Ventas en el local — marcá cuántas unidades vendiste y se descuentan del inventario</p>
         </div>
+        <button className="btn btn-primary" onClick={() => setScannerOpen(true)}>📷 Escanear</button>
       </div>
 
       <div className="stat-grid">
@@ -291,6 +318,13 @@ export default function VentasFisicas() {
         )}
       </div>
       <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} />
+
+      {scannerOpen && (
+        <BarcodeScanner title="Escanear productos vendidos" onDetect={handleScan} onClose={() => setScannerOpen(false)} />
+      )}
+      {assignCode && (
+        <AssignBarcode code={assignCode} products={products} onAssigned={handleAssigned} onClose={() => setAssignCode(null)} />
+      )}
 
       {todaySales.length > 0 && (
         <>

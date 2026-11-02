@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import Modal from '../components/Modal'
 import Pagination, { PAGE_SIZE } from '../components/Pagination'
+import BarcodeScanner from '../components/BarcodeScanner'
 
 const CATEGORIES = [
   'Motor',
@@ -26,6 +27,7 @@ const PART_TYPE_BADGE = { original: 'badge-green', alternativo: 'badge-orange', 
 const EMPTY_FORM = {
   id: null,
   sku: '',
+  barcode: '',
   title: '',
   description: '',
   category: CATEGORIES[0],
@@ -76,6 +78,8 @@ export default function Inventario() {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [formScannerOpen, setFormScannerOpen] = useState(false)
+  const [searchScannerOpen, setSearchScannerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [photoError, setPhotoError] = useState('')
 
@@ -155,6 +159,7 @@ export default function Inventario() {
     setForm({
       id: p.id,
       sku: p.sku || '',
+      barcode: p.barcode || '',
       title: p.title || '',
       description: p.description || '',
       category: p.category || CATEGORIES[0],
@@ -342,9 +347,18 @@ export default function Inventario() {
 
   async function handleSave(e) {
     e.preventDefault()
+    const barcode = (form.barcode || '').trim()
+    if (barcode) {
+      const dup = products.find((p) => p.barcode === barcode && p.id !== form.id)
+      if (dup) {
+        alert(`El código ${barcode} ya está asignado a "${dup.title}".`)
+        return
+      }
+    }
     setSaving(true)
     const payload = {
       sku: form.sku || null,
+      barcode: barcode || null,
       title: form.title,
       description: form.description,
       category: form.category,
@@ -531,7 +545,7 @@ export default function Inventario() {
 
   const filtered = products.filter((p) => {
     const q = search.toLowerCase()
-    const matchesSearch = !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q)
+    const matchesSearch = !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.barcode || '').includes(q) || (p.category || '').toLowerCase().includes(q)
     const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter
     const matchesType = typeFilter === 'all' || p.part_type === typeFilter
     return matchesSearch && matchesCategory && matchesType
@@ -578,10 +592,11 @@ export default function Inventario() {
         <input
           className="input"
           style={{ maxWidth: 260 }}
-          placeholder="Buscar por título, SKU o categoría…"
+          placeholder="Buscar por título, SKU, código o categoría…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <button type="button" className="btn" onClick={() => setSearchScannerOpen(true)} aria-label="Buscar escaneando">📷</button>
         <select className="input" style={{ maxWidth: 220 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
           <option value="all">Todas las categorías ({products.length})</option>
           {CATEGORIES.map((c) => (
@@ -702,6 +717,13 @@ export default function Inventario() {
             <div className="field">
               <label>SKU</label>
               <input className="input" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>Código de barras</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input className="input" inputMode="numeric" placeholder="Escaneá o escribilo" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
+                <button type="button" className="btn" onClick={() => setFormScannerOpen(true)} aria-label="Escanear código de barras">📷</button>
+              </div>
             </div>
             <div className="field">
               <label>Categoría</label>
@@ -956,6 +978,22 @@ export default function Inventario() {
             </div>
           )}
         </Modal>
+      )}
+      {formScannerOpen && (
+        <BarcodeScanner
+          title="Escanear código del producto"
+          continuous={false}
+          onDetect={(code) => { setForm((f) => ({ ...f, barcode: code })) }}
+          onClose={() => setFormScannerOpen(false)}
+        />
+      )}
+      {searchScannerOpen && (
+        <BarcodeScanner
+          title="Buscar producto por código"
+          continuous={false}
+          onDetect={(code) => { setSearch(code); setPage(1) }}
+          onClose={() => setSearchScannerOpen(false)}
+        />
       )}
     </div>
   )

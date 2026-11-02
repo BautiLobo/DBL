@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import { localToday, syncMlStock } from '../lib/stock'
 import Pagination, { PAGE_SIZE } from '../components/Pagination'
+import BarcodeScanner from '../components/BarcodeScanner'
+import AssignBarcode from '../components/AssignBarcode'
 
 export default function CargaCompra() {
   const [products, setProducts] = useState([])
@@ -18,12 +20,14 @@ export default function CargaCompra() {
   const [updateCost, setUpdateCost] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [assignCode, setAssignCode] = useState(null)
 
   async function loadData() {
     setLoading(true)
     const { data: prods } = await supabase
       .from('products')
-      .select('id, title, sku, category, sale_price, cost_price, stock_qty, ml_item_id')
+      .select('id, title, sku, barcode, category, sale_price, cost_price, stock_qty, ml_item_id')
       .eq('active', true)
       .order('title')
     setProducts(prods || [])
@@ -43,6 +47,27 @@ export default function CargaCompra() {
     setLines((prev) => ({ ...prev, [p.id]: { ...lineFor(p), ...patch } }))
   }
 
+  function addScanned(p) {
+    const next = (Number(lines[p.id]?.qty) || 0) + 1
+    updateLine(p, { qty: String(next) })
+    return { text: `✓ ${p.title} — ${next} unidad(es)`, ok: true }
+  }
+
+  function handleScan(code) {
+    const p = products.find((x) => x.barcode === code) || products.find((x) => x.sku && x.sku === code)
+    if (p) return addScanned(p)
+    setScannerOpen(false)
+    setAssignCode(code)
+    return null
+  }
+
+  function handleAssigned(p) {
+    setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, barcode: p.barcode } : x)))
+    setAssignCode(null)
+    addScanned(p)
+    setScannerOpen(true)
+  }
+
   const loaded = products.filter((p) => Number(lines[p.id]?.qty) > 0)
   const totalUnits = loaded.reduce((s, p) => s + Number(lines[p.id].qty), 0)
   const total = loaded.reduce((s, p) => s + Number(lines[p.id].qty) * (Number(lines[p.id].unit_cost) || 0), 0)
@@ -50,7 +75,7 @@ export default function CargaCompra() {
   const filtered = products.filter((p) => {
     if (onlyLoaded && !(Number(lines[p.id]?.qty) > 0)) return false
     const q = search.toLowerCase()
-    return !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q)
+    return !q || p.title.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.barcode || '').includes(q) || (p.category || '').toLowerCase().includes(q)
   })
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -152,6 +177,7 @@ export default function CargaCompra() {
           <h1>Carga de compra</h1>
           <p>Cargá una compra grande: cantidad y costo por unidad de cada producto, y se suma al inventario</p>
         </div>
+        <button className="btn btn-primary" onClick={() => setScannerOpen(true)}>📷 Escanear</button>
       </div>
 
       <div className="toolbar" style={{ flexWrap: 'wrap' }}>
@@ -277,6 +303,13 @@ export default function CargaCompra() {
         )}
       </div>
       <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} />
+
+      {scannerOpen && (
+        <BarcodeScanner title="Escanear mercadería que llegó" onDetect={handleScan} onClose={() => setScannerOpen(false)} />
+      )}
+      {assignCode && (
+        <AssignBarcode code={assignCode} products={products} onAssigned={handleAssigned} onClose={() => setAssignCode(null)} />
+      )}
     </div>
   )
 }
