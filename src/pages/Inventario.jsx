@@ -5,7 +5,9 @@ import Modal from '../components/Modal'
 import Pagination, { PAGE_SIZE } from '../components/Pagination'
 import BarcodeScanner from '../components/BarcodeScanner'
 
-const CATEGORIES = [
+// Categorías por defecto. La lista editable se guarda en settings ('inventory_categories', JSON).
+const CATEGORIES_SETTING_KEY = 'inventory_categories'
+const DEFAULT_CATEGORIES = [
   'Motor',
   'Transmisión',
   'Frenos',
@@ -30,7 +32,7 @@ const EMPTY_FORM = {
   barcode: '',
   title: '',
   description: '',
-  category: CATEGORIES[0],
+  category: DEFAULT_CATEGORIES[0],
   part_type: 'alternativo',
   brand_compat: '',
   cost_price: '',
@@ -99,6 +101,135 @@ export default function Inventario() {
   const [publishModalOpen, setPublishModalOpen] = useState(false)
   const [publishProductId, setPublishProductId] = useState(null)
 
+  const [savedCategories, setSavedCategories] = useState(DEFAULT_CATEGORIES)
+  const [categoriesModalOpen, setCategoriesModalOpen] = useState(false)
+  const [newCategory, setNewCategory] = useState('')
+  const [categoryBusy, setCategoryBusy] = useState(false)
+  const [categoryError, setCategoryError] = useState('')
+  const [editingCategory, setEditingCategory] = useState(null) // { original, value }
+  const [formNewCategory, setFormNewCategory] = useState(null) // string mientras se escribe una nueva desde el formulario
+
+  // Lista que se muestra: las guardadas + cualquier categoría que tenga algún producto y no esté en la lista.
+  const CATEGORIES = [
+    ...savedCategories,
+    ...[...new Set(products.map((p) => p.category).filter(Boolean))].filter((c) => !savedCategories.includes(c)).sort((a, b) => a.localeCompare(b)),
+  ]
+
+  async function loadCategories() {
+    const { data } = await supabase.from('settings').select('value').eq('key', CATEGORIES_SETTING_KEY).maybeSingle()
+    if (!data?.value) return
+    try {
+      const list = JSON.parse(data.value)
+      if (Array.isArray(list) && list.length) setSavedCategories(list.filter((c) => typeof c === 'string' && c.trim()))
+    } catch { /* valor inválido: se usan las categorías por defecto */ }
+  }
+
+  async function persistCategories(list) {
+    const { error } = await supabase.from('settings').upsert([{ key: CATEGORIES_SETTING_KEY, value: JSON.stringify(list), updated_at: new Date().toISOString() }])
+    if (error) throw error
+    setSavedCategories(list)
+  }
+
+  function categoryExists(name) {
+    const n = name.trim().toLowerCase()
+    return CATEGORIES.some((c) => c.toLowerCase() === n)
+  }
+
+  async function addCategory(name) {
+    const clean = name.trim()
+    if (!clean) return null
+    const existing = CATEGORIES.find((c) => c.toLowerCase() === clean.toLowerCase())
+    if (existing) {
+      if (!savedCategories.includes(existing)) await persistCategories([...savedCategories, existing])
+      return existing
+    }
+    await persistCategories([...savedCategories, clean])
+    return clean
+  }
+
+  async function handleAddCategory(e) {
+    e.preventDefault()
+    setCategoryError('')
+    if (!newCategory.trim()) return
+    if (categoryExists(newCategory)) { setCategoryError('Esa categoría ya existe.'); return }
+    setCategoryBusy(true)
+    try {
+      await addCategory(newCategory)
+      setNewCategory('')
+    } catch (err) {
+      setCategoryError(err.message || 'No se pudo guardar la categoría')
+    } finally {
+      setCategoryBusy(false)
+    }
+  }
+
+  async function handleRenameCategory() {
+    if (!editingCategory) return
+    const { original } = editingCategory
+    const value = editingCategory.value.trim()
+    setCategoryError('')
+    if (!value || value === original) { setEditingCategory(null); return }
+    if (CATEGORIES.some((c) => c !== original && c.toLowerCase() === value.toLowerCase())) {
+      setCategoryError('Ya hay otra categoría con ese nombre.')
+      return
+    }
+    setCategoryBusy(true)
+    try {
+      const { error } = await supabase.from('products').update({ category: value }).eq('category', original)
+      if (error) throw error
+      const list = savedCategories.includes(original)
+        ? savedCategories.map((c) => (c === original ? value : c))
+        : [...savedCategories, value]
+      await persistCategories(list)
+      setProducts((prev) => prev.map((p) => (p.category === original ? { ...p, category: value } : p)))
+      if (categoryFilter === original) setCategoryFilter(value)
+      setEditingCategory(null)
+    } catch (err) {
+      setCategoryError(err.message || 'No se pudo renombrar la categoría')
+    } finally {
+      setCategoryBusy(false)
+    }
+  }
+
+  async function handleDeleteCategory(name) {
+    setCategoryError('')
+    const count = products.filter((p) => p.category === name).length
+    if (count > 0) {
+      setCategoryError(`"${name}" tiene ${count} ${count === 1 ? 'producto' : 'productos'}. Pasalos a otra categoría (o renombrala) antes de eliminarla.`)
+      return
+    }
+    setCategoryBusy(true)
+    try {
+      await persistCategories(savedCategories.filter((c) => c !== name))
+      if (categoryFilter === name) setCategoryFilter('all')
+    } catch (err) {
+      setCategoryError(err.message || 'No se pudo eliminar la categoría')
+    } finally {
+      setCategoryBusy(false)
+    }
+  }
+
+  async function moveCategory(name, dir) {
+    const i = savedCategories.indexOf(name)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= savedCategories.length) return
+    const list = [...savedCategories]
+    ;[list[i], list[j]] = [list[j], list[i]]
+    try { await persistCategories(list) } catch (err) { setCategoryError(err.message || 'No se pudo reordenar') }
+  }
+
+  async function confirmFormNewCategory() {
+    const value = (formNewCategory || '').trim()
+    if (!value) { setFormNewCategory(null); return }
+    try {
+      const name = await addCategory(value)
+      setForm((f) => ({ ...f, category: name }))
+      setFormNewCategory(null)
+    } catch (err) {
+      alert(err.message || 'No se pudo crear la categoría')
+    }
+  }
+
   const editingProduct = form.id ? products.find((p) => p.id === form.id) : null
   const publishingProduct = publishProductId ? products.find((p) => p.id === publishProductId) : null
 
@@ -134,7 +265,7 @@ export default function Inventario() {
     setLoading(false)
   }
 
-  useEffect(() => { loadProducts() }, [])
+  useEffect(() => { loadProducts(); loadCategories() }, [])
 
   function resetMlUi() {
     setMlError('')
@@ -147,7 +278,8 @@ export default function Inventario() {
   }
 
   function openNew() {
-    setForm(EMPTY_FORM)
+    setForm({ ...EMPTY_FORM, category: CATEGORIES[0] || '' })
+    setFormNewCategory(null)
     resetMlUi()
     setVariants([])
     setRemovedVariantIds([])
@@ -156,13 +288,14 @@ export default function Inventario() {
   }
 
   function openEdit(p) {
+    setFormNewCategory(null)
     setForm({
       id: p.id,
       sku: p.sku || '',
       barcode: p.barcode || '',
       title: p.title || '',
       description: p.description || '',
-      category: p.category || CATEGORIES[0],
+      category: p.category || CATEGORIES[0] || '',
       part_type: p.part_type || 'alternativo',
       brand_compat: p.brand_compat || '',
       cost_price: p.cost_price ?? '',
@@ -603,6 +736,7 @@ export default function Inventario() {
             <option key={c} value={c}>{c} ({categoryCounts[c]})</option>
           ))}
         </select>
+        <button type="button" className="btn" onClick={() => { setCategoryError(''); setEditingCategory(null); setCategoriesModalOpen(true) }}>Categorías</button>
         <select className="input" style={{ maxWidth: 160 }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="all">Todos los tipos</option>
           {Object.entries(PART_TYPE_LABEL).map(([value, label]) => (
@@ -727,9 +861,30 @@ export default function Inventario() {
             </div>
             <div className="field">
               <label>Categoría</label>
-              <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              {formNewCategory === null ? (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button type="button" className="btn" onClick={() => setFormNewCategory('')} title="Crear categoría nueva">+ Nueva</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    className="input"
+                    autoFocus
+                    placeholder="Nombre de la categoría"
+                    value={formNewCategory}
+                    onChange={(e) => setFormNewCategory(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); confirmFormNewCategory() }
+                      if (e.key === 'Escape') { e.preventDefault(); setFormNewCategory(null) }
+                    }}
+                  />
+                  <button type="button" className="btn btn-primary" onClick={confirmFormNewCategory}>OK</button>
+                  <button type="button" className="btn btn-ghost" onClick={() => setFormNewCategory(null)} aria-label="Cancelar">✕</button>
+                </div>
+              )}
             </div>
             <div className="field">
               <label>Tipo</label>
@@ -977,6 +1132,64 @@ export default function Inventario() {
               )}
             </div>
           )}
+        </Modal>
+      )}
+      {categoriesModalOpen && (
+        <Modal
+          title="Categorías del inventario"
+          onClose={() => setCategoriesModalOpen(false)}
+          actions={<button className="btn" onClick={() => setCategoriesModalOpen(false)}>Cerrar</button>}
+        >
+          <form onSubmit={handleAddCategory} style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            <input className="input" placeholder="Nueva categoría (ej: Iluminación)" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} />
+            <button type="submit" className="btn btn-primary" disabled={categoryBusy || !newCategory.trim()}>Agregar</button>
+          </form>
+          {categoryError && <div style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 10 }}>{categoryError}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 360, overflowY: 'auto' }}>
+            {CATEGORIES.map((c) => {
+              const count = products.filter((p) => p.category === c).length
+              const saved = savedCategories.includes(c)
+              const idx = savedCategories.indexOf(c)
+              const isEditing = editingCategory?.original === c
+              return (
+                <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 4px', borderBottom: '1px solid var(--border)' }}>
+                  {isEditing ? (
+                    <>
+                      <input
+                        className="input"
+                        autoFocus
+                        value={editingCategory.value}
+                        onChange={(e) => setEditingCategory({ original: c, value: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); handleRenameCategory() }
+                          if (e.key === 'Escape') { e.preventDefault(); setEditingCategory(null) }
+                        }}
+                      />
+                      <button type="button" className="btn btn-primary" disabled={categoryBusy} onClick={handleRenameCategory}>Guardar</button>
+                      <button type="button" className="btn btn-ghost" onClick={() => setEditingCategory(null)}>✕</button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ flex: 1, fontSize: 14 }}>
+                        {c} <span style={{ color: 'var(--text-dim)', fontSize: 12 }}>({count})</span>
+                      </span>
+                      {saved && (
+                        <>
+                          <button type="button" className="btn btn-ghost" disabled={categoryBusy || idx === 0} onClick={() => moveCategory(c, -1)} aria-label="Subir">↑</button>
+                          <button type="button" className="btn btn-ghost" disabled={categoryBusy || idx === savedCategories.length - 1} onClick={() => moveCategory(c, 1)} aria-label="Bajar">↓</button>
+                        </>
+                      )}
+                      <button type="button" className="btn btn-ghost" disabled={categoryBusy} onClick={() => { setCategoryError(''); setEditingCategory({ original: c, value: c }) }}>Renombrar</button>
+                      <button type="button" className="btn btn-ghost" disabled={categoryBusy} onClick={() => handleDeleteCategory(c)}>Eliminar</button>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 10 }}>
+            Al renombrar, todos los productos de esa categoría se actualizan. Solo se pueden eliminar categorías sin productos.
+          </p>
         </Modal>
       )}
       {formScannerOpen && (
